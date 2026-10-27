@@ -4,12 +4,14 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./password": "./src/password.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@barber/shared": "*"
+    "@barber/shared": "*",
+    "server-only": "^0.0.1"
   }
 }

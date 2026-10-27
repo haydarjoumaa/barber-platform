@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@barber/auth": "*",
+    "@barber/shared": "*",
     "@prisma/client": "^7.0.0",
     "@prisma/adapter-pg": "^7.0.0",
     "server-only": "^0.0.1"

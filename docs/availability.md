@@ -22,7 +22,7 @@ Results include barber ID, appointment start, service end, occupied end, total s
 - Apply publication state, staff permissions, approval mode, minimum notice and the 30-day booking horizon on the server.
 - Load only appointment statuses that block availability under the agreed lifecycle rules, retaining occupied buffers.
 - Recalculate prices/durations and availability from authoritative data inside the booking transaction.
-- Add the PostgreSQL exclusion constraint and real concurrent booking tests before any appointment write endpoint exists. A successful availability lookup cannot prevent another request from taking the slot.
+- Install the [appointment reservation migration](reservations.md) and run its PostgreSQL concurrency tests before any appointment write endpoint exists. Add API-level race tests when implementing the endpoint. A successful availability lookup cannot prevent another request from taking the slot.
 - Add cancellation/rescheduling policy checks and staff override authorization with audit records.
 
 Run `npm test` to exercise duration calculations, service compatibility, tenant consistency, overrides, interval boundaries, buffers, closures, input validation and a Beirut DST transition. PostgreSQL is not needed for these tests.

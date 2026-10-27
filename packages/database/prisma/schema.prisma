@@ -13,11 +13,20 @@ enum StaffRole {
   RECEPTIONIST
 }
 
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}
+
 model Barbershop {
   id          String   @id @default(uuid()) @db.Uuid
   name        String
   slug        String   @unique
   timeZone    String   @default("Asia/Beirut") @map("time_zone")
+  currency    String?  @db.VarChar(3)
   publishedAt DateTime? @map("published_at") @db.Timestamptz(3)
   deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -26,6 +35,12 @@ model Barbershop {
   barbers     Barber[]
   clients     Client[]
   clientAccounts ClientAccount[]
+  appointments Appointment[]
+  services Service[]
+  barberServices BarberService[]
+  auditEvents AuditEvent[]
+
+  @@unique([id, currency])
 
   @@map("barbershops")
 }
@@ -37,8 +52,42 @@ model User {
   passwordHash String? @map("password_hash")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   memberships  ShopMembership[]
+  auditEvents AuditEvent[]
 
   @@map("users")
+  sessions StaffSession[]
+  authEvents StaffAuthEvent[]
+}
+
+model StaffSession {
+  tokenHash String @id @map("token_hash") @db.VarChar(64)
+  userId String @map("user_id") @db.Uuid
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  lastSeenAt DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("staff_sessions")
+}
+
+model AuthRateLimit {
+  key String @id @db.VarChar(100)
+  attempts Int
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  @@index([expiresAt])
+  @@map("auth_rate_limits")
+}
+
+// Global identity security events, not tenant-owned appointment/activity records.
+model StaffAuthEvent {
+  id String @id @default(uuid()) @db.Uuid
+  userId String? @map("user_id") @db.Uuid
+  event String @db.VarChar(64)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  @@index([userId, createdAt])
+  @@map("staff_auth_events")
 }
 
 model ShopMembership {
@@ -62,6 +111,8 @@ model Barber {
   displayName  String @map("display_name")
   barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Restrict)
   membership   ShopMembership @relation(fields: [barbershopId, membershipId], references: [barbershopId, id], onDelete: Restrict)
+  appointments Appointment[]
+  services BarberService[]
 
   @@unique([barbershopId, membershipId])
   @@unique([barbershopId, id])
@@ -78,6 +129,7 @@ model Client {
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Restrict)
   account      ClientAccount?
+  appointments Appointment[]
 
   @@unique([barbershopId, phone])
   @@unique([barbershopId, id])
@@ -96,4 +148,75 @@ model ClientAccount {
 
   @@unique([barbershopId, clientId])
   @@map("client_accounts")
+}
+
+// Reservation foundation only. Service/price snapshots and booking workflows follow.
+// The SQL migration owns the interval checks and GiST exclusion constraint;
+// Prisma schema generation alone does not install those protections.
+model Appointment {
+  id            String @id @default(uuid()) @db.Uuid
+  barbershopId  String @map("barbershop_id") @db.Uuid
+  barberId      String @map("barber_id") @db.Uuid
+  clientId      String? @map("client_id") @db.Uuid
+  status        AppointmentStatus
+  startsAt      DateTime @map("starts_at") @db.Timestamptz(3)
+  serviceEndsAt DateTime @map("service_ends_at") @db.Timestamptz(3)
+  occupiedUntil DateTime @map("occupied_until") @db.Timestamptz(3)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  barbershop    Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Restrict)
+  barber        Barber @relation(fields: [barbershopId, barberId], references: [barbershopId, id], onDelete: Restrict)
+  client        Client? @relation(fields: [barbershopId, clientId], references: [barbershopId, id], onDelete: Restrict)
+
+  @@unique([barbershopId, id])
+  @@index([barbershopId, startsAt])
+  @@index([barbershopId, clientId, startsAt])
+  @@map("appointments")
+}
+
+model Service {
+  id              String @id @default(uuid()) @db.Uuid
+  barbershopId    String @map("barbershop_id") @db.Uuid
+  name            String @db.VarChar(100)
+  durationMinutes Int @map("duration_minutes")
+  priceMinor      Int @map("price_minor")
+  currency        String @db.VarChar(3)
+  archivedAt      DateTime? @map("archived_at") @db.Timestamptz(3)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  barbershop      Barbershop @relation(fields: [barbershopId, currency], references: [id, currency], onDelete: Restrict, onUpdate: Restrict)
+  barbers         BarberService[]
+
+  @@unique([barbershopId, id])
+  @@map("services")
+}
+
+// A row explicitly enables this service for the barber; null overrides inherit shop values.
+model BarberService {
+  barbershopId    String @map("barbershop_id") @db.Uuid
+  barberId        String @map("barber_id") @db.Uuid
+  serviceId       String @map("service_id") @db.Uuid
+  durationMinutes Int? @map("duration_minutes")
+  priceMinor      Int? @map("price_minor")
+  barbershop      Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Restrict)
+  barber          Barber @relation(fields: [barbershopId, barberId], references: [barbershopId, id], onDelete: Restrict)
+  service         Service @relation(fields: [barbershopId, serviceId], references: [barbershopId, id], onDelete: Restrict)
+
+  @@id([barbershopId, barberId, serviceId])
+  @@index([barbershopId, serviceId])
+  @@map("barber_services")
+}
+
+model AuditEvent {
+  id           String @id @default(uuid()) @db.Uuid
+  barbershopId String @map("barbershop_id") @db.Uuid
+  actorUserId  String @map("actor_user_id") @db.Uuid
+  event        String @db.VarChar(64)
+  details      Json
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Restrict)
+  actor        User @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([barbershopId, createdAt])
+  @@map("audit_events")
 }

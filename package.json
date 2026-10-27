@@ -16,7 +16,7 @@
     "lint": "eslint .",
     "typecheck": "npm run db:generate && tsc --noEmit && npm run typecheck --workspaces --if-present",
     "test": "vitest run",
-    "test:database": "node --env-file=.env --import tsx --test tests/database.integration.ts",
+    "test:database": "node --env-file-if-exists=.env --import tsx --test tests/database.integration.ts tests/appointments.integration.ts tests/catalog.integration.ts",
     "check": "npm run lint && npm run typecheck && npm test && npm run build",
     "db:generate": "prisma generate",
     "db:validate": "prisma validate",

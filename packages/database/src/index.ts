@@ -1,6 +1,8 @@
 import "server-only";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "./generated/prisma/client";
+export { createServiceCatalog, type ServiceInput, type BarberServiceInput } from "./catalog";
+export { createStaffAccounts, AccountError, STAFF_SESSION_SECONDS, type OwnerRegistration } from "./staff-accounts";
 
 const globalDatabase = globalThis as unknown as { barberDatabase?: PrismaClient };
 

@@ -33,7 +33,7 @@ If port 5432 is already occupied, change the host-side Compose port and the port
 | `npm run dev -w @barber/business` | Run only the Business App |
 | `npm run dev -w @barber/client` | Run only the Client App |
 | `npm run check` | Lint, typecheck, unit tests and production builds |
-| `npm run test:database` | PostgreSQL tenant constraint integration test (requires `.env`, migration and database) |
+| `npm run test:database` | PostgreSQL tenant, catalog/RBAC, appointment constraint and concurrent-writer tests (requires migrated database and `DATABASE_URL` in environment or `.env`) |
 | `npm run db:validate` | Validate the Prisma schema |
 | `npm run db:migrate -- --name descriptive_name` | Create/apply a development migration |
 | `npm run db:deploy` | Apply existing migrations |
@@ -47,7 +47,7 @@ Production builds use webpack for a predictable workspace build; local developme
 apps/business       Staff application and shared API host
 apps/client         Shop-specific client application
 packages/database   Prisma schema, migrations, server-only connection
-packages/auth       Server authorization boundaries; sessions not yet implemented
+packages/auth       Authorization boundaries and password hashing; sessions pending
 packages/shared     Contracts, slug validation and localization utilities
 packages/ui         Shared UI and styles
 tests               PostgreSQL integration tests
@@ -64,10 +64,16 @@ Run `npm run dev` and open either application. Both layouts work without `.env` 
 
 Use the language selector to switch between English and Arabic. The document language, direction, screen text and offline banner update together. A non-sensitive `barber-locale` cookie remembers the preference for one year. The apps share this preference on the same hostname (including localhost across ports). Reload to pick up a language change made in another tab. If cookies are blocked, switching still works for the current page but persistence is not guaranteed. Server-rendered layouts read the cookie, so they render dynamically without requiring a database. See the official [Next.js cookies documentation](https://nextjs.org/docs/app/api-reference/functions/cookies).
 
-Manual UI verification: check both languages at desktop and 375px phone width; navigate every Business section; expand Client FAQs; reload after switching language; and toggle browser offline mode after loading to check the localized notice. Public routing remains a proposal, and these previews are not authenticated workspaces.
+Manual UI verification: check both languages at desktop, tablet and 375px phone width; navigate every Business section; switch the appointment calendar between day/week/month, move between periods, select a date and use Today; expand Client FAQs; reload after switching language; and toggle browser offline mode after loading to check the localized notice. Public routing remains a proposal, and these previews are not authenticated workspaces. See [interface and calendar boundaries](docs/interface.md) for the redesigned theme and calendar limitations.
 
 ## Availability foundation
 
 The shared package now calculates availability from trusted service/barber records and explicit UTC candidate slots, without a database. It handles multi-service durations, barber overrides, occupied buffers, working intervals and blockers. Run `npm test` for its regression cases. Read [availability boundaries](docs/availability.md) before connecting it to an API: policy enforcement, persisted schedule integration and race-safe database reservations are still required.
 
 The [local scheduling layer](docs/scheduling.md) now expands weekly hours, overrides, breaks, overnight shifts, time off and closure dates into UTC. It handles Beirut DST explicitly and composes with the availability engine. Schedule editing and database persistence are still pending.
+
+The [password storage foundation](docs/passwords.md) provides server-only hashing and verification using Node's built-in scrypt. Its tests run with `npm test` without PostgreSQL. Account creation, login, reset flows and sessions remain pending.
+
+The [appointment reservation foundation](docs/reservations.md) adds a PostgreSQL exclusion constraint protecting each barber's occupied time, including buffers. Apply migrations before running `npm run test:database`, which exercises tenant boundaries, status changes and actual concurrent writers. Service/price snapshots and booking endpoints remain pending. Use migrations rather than `prisma db push`: the Prisma schema alone cannot install the custom overlap constraint.
+
+The [persistent service catalog](docs/catalog.md) adds owner-only server operations for services, barber overrides and explicit shop currency, with database permission rechecks and transactional audit records. `npm run test:database` also exercises catalog tenant isolation, RBAC and composition with availability. Service editing UI and authenticated API routes remain pending.
