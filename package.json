@@ -1,0 +1,42 @@
+{
+  "name": "barber-platform",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n business,client \"npm run dev -w @barber/business\" \"npm run dev -w @barber/client\"",
+    "build": "npm run db:generate && npm run build --workspaces --if-present",
+    "lint": "eslint .",
+    "typecheck": "npm run db:generate && tsc --noEmit && npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "test:database": "node --env-file=.env --import tsx --test tests/database.integration.ts",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
+    "db:generate": "prisma generate",
+    "db:validate": "prisma validate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:studio": "prisma studio"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "concurrently": "^9.0.0",
+    "dotenv": "^16.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "^16.0.0",
+    "prisma": "^7.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^4.1.12"
+  }
+}

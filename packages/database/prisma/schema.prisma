@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum StaffRole {
+  OWNER
+  BARBER
+  RECEPTIONIST
+}
+
+model Barbershop {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String   @unique
+  timeZone    String   @default("Asia/Beirut") @map("time_zone")
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(3)
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  memberships ShopMembership[]
+  barbers     Barber[]
+  clients     Client[]
+  clientAccounts ClientAccount[]
+
+  @@map("barbershops")
+}
+
+// Staff identity is independent of shop membership and barber profile.
+model User {
+  id           String @id @default(uuid()) @db.Uuid
+  email        String @unique
+  passwordHash String? @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  memberships  ShopMembership[]
+
+  @@map("users")
+}
+
+model ShopMembership {
+  id           String @id @default(uuid()) @db.Uuid
+  barbershopId String @map("barbershop_id") @db.Uuid
+  userId       String @map("user_id") @db.Uuid
+  role         StaffRole
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Restrict)
+  user         User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  barber       Barber?
+
+  @@unique([barbershopId, userId])
+  @@unique([barbershopId, id])
+  @@map("shop_memberships")
+}
+
+model Barber {
+  id           String @id @default(uuid()) @db.Uuid
+  barbershopId String @map("barbershop_id") @db.Uuid
+  membershipId String @map("membership_id") @db.Uuid
+  displayName  String @map("display_name")
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Restrict)
+  membership   ShopMembership @relation(fields: [barbershopId, membershipId], references: [barbershopId, id], onDelete: Restrict)
+
+  @@unique([barbershopId, membershipId])
+  @@unique([barbershopId, id])
+  @@map("barbers")
+}
+
+// Staff-created client records need not have login credentials.
+model Client {
+  id           String @id @default(uuid()) @db.Uuid
+  barbershopId String @map("barbershop_id") @db.Uuid
+  name         String
+  phone        String
+  email        String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Restrict)
+  account      ClientAccount?
+
+  @@unique([barbershopId, phone])
+  @@unique([barbershopId, id])
+  @@map("clients")
+}
+
+// Phone is held on Client to avoid diverging account/profile phone values.
+model ClientAccount {
+  id           String @id @default(uuid()) @db.Uuid
+  barbershopId String @map("barbershop_id") @db.Uuid
+  clientId     String @map("client_id") @db.Uuid
+  passwordHash String @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Restrict)
+  client       Client @relation(fields: [barbershopId, clientId], references: [barbershopId, id], onDelete: Restrict)
+
+  @@unique([barbershopId, clientId])
+  @@map("client_accounts")
+}

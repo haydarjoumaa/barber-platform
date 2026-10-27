@@ -1,0 +1,17 @@
+{
+  "name": "@barber/database",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prisma/client": "^7.0.0",
+    "@prisma/adapter-pg": "^7.0.0",
+    "server-only": "^0.0.1"
+  }
+}
