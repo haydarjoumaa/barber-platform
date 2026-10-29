@@ -1,0 +1,21 @@
+# Staff accounts: local development
+
+The Business App includes `/register`, `/login` and a protected `/workspace`. The existing staff implementation uses email and password; client phone/password accounts and staff recovery remain pending. These are local app paths, not the proposed public `/business` gateway routes.
+
+Apply all migrations with `npm run db:deploy`. In a gitignored `apps/business/.env.local`, set `DATABASE_URL` to the same local database URL used by Prisma and `APP_ORIGIN=http://localhost:3001`. Restart the dev server after changing environment values. Root `.env` is used by Prisma and integration tests; Next.js does not automatically load it for either app. Never expose these values through `NEXT_PUBLIC_`.
+
+Visit http://localhost:3001/register, choose a unique shop link and an explicit currency, and create an owner account. Passwords require at least 12 characters and at most 1024 UTF-8 bytes. Registration creates the identity, shop, owner membership, session and audit records transactionally. It does not create a barber profile or publish the storefront. The workspace lists owned shops and supports adding, editing and archiving their services; full onboarding remains pending. The root workspace preview remains separate from these authenticated pages.
+
+Staff emails are normalized to lowercase, with a case-insensitive database uniqueness index. Passwords use the shared scrypt implementation. Sessions use random 32-byte tokens; only SHA-256 token digests are stored. Cookies are HttpOnly and SameSite=Lax, with Secure and a `__Host-` name for HTTPS. Plain HTTP is accepted only on loopback hosts. Account actions check the request Origin against the configured APP_ORIGIN. Use the exact configured hostname when opening the app.
+
+Sessions expire after eight hours, or one hour without authenticated activity. Login and registration replace the browser's previous session; logout removes the stored session. Authentication reloads current memberships and excludes deactivated shops; catalog repositories also recheck roles against the database before access. Password recovery, revocation of all sessions, expired-session housekeeping and staff invitations remain pending.
+
+Database rate limits allow five attempts per normalized email and action in a 15-minute window. Global limits are 100 login attempts and 20 registrations per window. Failed attempts consume the limit. These conservative local limits are shared across all users; production abuse controls and staff recovery still need design. No email delivery, SMS or paid service is used.
+
+Run `npm run test:database` against a migrated local database. The account suite creates a uniquely named temporary schema, replays the migrations there, and removes that schema afterward. The database user needs schema-creation permission. Existing migrations must already have installed `btree_gist` outside that temporary schema. Tests isolate global rate counters and anonymous audit events from development data. They cover registration rollback, hashed credentials/tokens, login rotation, logout, expiry, current roles, tenant isolation and concurrent rate limits. Password hashing is real except in the concurrency test, which substitutes password verification to focus on SQL behavior.
+
+Manual browser checks: test registration/login errors in both English and Arabic, submit a valid registration, reload the workspace, sign out and verify the workspace redirects to login. Check keyboard focus and narrow-screen layouts. These browser checks and PostgreSQL tests require the configured local environment; a successful production build alone does not verify them.
+
+Request-policy regression tests run without a database using `npm test`. They cover exact Origin matching, rejection of missing/cross-origin requests, loopback-only HTTP configuration, canonical origin validation and the secure cookie name for HTTPS.
+
+Validation on October 28, 2026: lint, workspace typechecking, 121 unit tests and both production builds passed. Builds required running outside the execution sandbox. PostgreSQL integration tests could not run: `DATABASE_URL` was absent and the local Docker socket denied access even outside the sandbox. Browser account flows remain unverified. The available runtime was Node 20.20.2; repeat validation on the required Node 22.12+ before beta.

@@ -1,4 +1,5 @@
-import { requireShopOwner, type StaffPrincipal } from "@barber/auth";
+import { withShopOwner } from "./owner-transaction";
+import { type StaffPrincipal } from "@barber/auth";
 import type { BarberServiceOption } from "@barber/shared";
 import type { Prisma, PrismaClient } from "./generated/prisma/client";
 
@@ -19,19 +20,9 @@ function serviceData(input: ServiceInput): ServiceInput {
 export function createServiceCatalog(database: PrismaClient) {
   async function withOwner<T>(principal: StaffPrincipal | null, barbershopId: string,
     operation: (tx: Prisma.TransactionClient, currency: string | null, actorUserId: string) => Promise<T>): Promise<T> {
-    requireShopOwner(principal, barbershopId);
-    return database.$transaction(async tx => {
-      // Recheck current database authorization, not just possibly stale session role claims.
-      // Serialize owner catalog operations and hold authorization/deactivation stable until commit.
-      const [shop] = await tx.$queryRaw<{ currency: string | null }[]>`
-        SELECT s.currency FROM barbershops s JOIN shop_memberships m ON m.barbershop_id = s.id
-        WHERE s.id = ${barbershopId}::uuid AND m.user_id = ${principal!.userId}::uuid
-          AND m.role = 'OWNER' AND s.deleted_at IS NULL
-        FOR UPDATE OF s, m`;
-      if (!shop) throw new Error("Forbidden");
-      return operation(tx, shop.currency, principal!.userId);
-    });
+    return withShopOwner(database, principal, barbershopId, (tx, shop, actor) => operation(tx, shop.currency, actor));
   }
+
   function audit(tx: Prisma.TransactionClient, barbershopId: string, actorUserId: string, event: string, details: Prisma.InputJsonObject) {
     return tx.auditEvent.create({ data: { barbershopId, actorUserId, event, details } });
   }
@@ -41,6 +32,25 @@ export function createServiceCatalog(database: PrismaClient) {
     return service;
   }
   return {
+    createBarber(principal: StaffPrincipal | null, barbershopId: string, membershipId: string, displayName: string) {
+      return withOwner(principal, barbershopId, async (tx, _currency, actor) => {
+        if (typeof displayName !== "string" || !displayName.trim() || displayName.length > 100) throw new Error("Invalid barber name");
+        if (!await tx.shopMembership.findUnique({ where: { barbershopId_id: { barbershopId, id: membershipId } } })) throw new Error("Member not found");
+        const barber = await tx.barber.create({ data: { barbershopId, membershipId, displayName: displayName.trim() } });
+        await audit(tx, barbershopId, actor, "team.barber_created", { barberId: barber.id, membershipId, displayName: barber.displayName });
+        return barber;
+      });
+    },
+    renameBarber(principal: StaffPrincipal | null, barbershopId: string, barberId: string, displayName: string) {
+      return withOwner(principal, barbershopId, async (tx, _currency, actor) => {
+        if (typeof displayName !== "string" || !displayName.trim() || displayName.length > 100) throw new Error("Invalid barber name");
+        const previous = await tx.barber.findUnique({ where: { barbershopId_id: { barbershopId, id: barberId } } });
+        if (!previous) throw new Error("Barber not found");
+        const barber = await tx.barber.update({ where: { barbershopId_id: { barbershopId, id: barberId } }, data: { displayName: displayName.trim() } });
+        await audit(tx, barbershopId, actor, "team.barber_renamed", { barberId, before: previous.displayName, after: barber.displayName });
+        return barber;
+      });
+    },
     setCurrency(principal: StaffPrincipal | null, barbershopId: string, currency: string) {
       return withOwner(principal, barbershopId, async (tx, previous, actor) => {
         if (!Intl.supportedValuesOf("currency").includes(currency)) throw new Error("Unsupported currency");
@@ -50,9 +60,10 @@ export function createServiceCatalog(database: PrismaClient) {
         await audit(tx, barbershopId, actor, "catalog.currency_set", { previous, currency });
       });
     },
-    createService(principal: StaffPrincipal | null, barbershopId: string, input: ServiceInput) {
+    createService(principal: StaffPrincipal | null, barbershopId: string, input: ServiceInput, expectedCurrency?: string) {
       return withOwner(principal, barbershopId, async (tx, currency, actor) => {
         if (!currency) throw new Error("Configure shop currency first");
+        if (expectedCurrency !== undefined && currency !== expectedCurrency) throw new Error("Shop currency changed; reload before saving");
         const data = serviceData(input);
         const service = await tx.service.create({ data: { ...data, barbershopId, currency } });
         await audit(tx, barbershopId, actor, "catalog.service_created", { serviceId: service.id, ...data, currency });
@@ -103,7 +114,8 @@ export function createServiceCatalog(database: PrismaClient) {
           id: true, barbershopId: true, displayName: true,
           services: { where: { service: { archivedAt: null } }, orderBy: { serviceId: "asc" }, select: { serviceId: true, durationMinutes: true, priceMinor: true } },
         } });
-        return { currency, services, barbers: barbers.map(barber => ({ ...barber, services: barber.services.map((option): BarberServiceOption => ({
+        const availableMembers = await tx.shopMembership.findMany({ where: { barbershopId, barber: null }, orderBy: { id: "asc" }, select: { id: true, user: { select: { email: true } } } });
+        return { currency, services, availableMembers: availableMembers.map(member => ({ id: member.id, email: member.user.email })), barbers: barbers.map(barber => ({ ...barber, services: barber.services.map((option): BarberServiceOption => ({
           serviceId: option.serviceId,
           ...(option.durationMinutes === null ? {} : { durationMinutes: option.durationMinutes }),
           ...(option.priceMinor === null ? {} : { priceMinor: option.priceMinor }),

@@ -48,6 +48,8 @@ test("persistent service catalog authorization, overrides and audit records", { 
       await assert.rejects(catalog.createService(principal, shopA, haircut), /Configure shop currency first/);
       await assert.rejects(catalog.setCurrency(principal, shopA, "usd"), /Unsupported currency/);
       await catalog.setCurrency(principal, shopA, "USD");
+      await assert.rejects(catalog.createService(principal, shopA, haircut, "JPY"), /Shop currency changed/);
+      assert.equal(await database.service.count({ where: { barbershopId: shopA } }), 0);
       const injected = { ...haircut, barbershopId: shopB, currency: "LBP" };
       const service = await catalog.createService(principal, shopA, injected);
       assert.equal(service.barbershopId, shopA);
@@ -144,6 +146,33 @@ test("persistent service catalog authorization, overrides and audit records", { 
       await assert.rejects(catalog.updateService(principal, shopA, service.id, haircut), /Service not found/);
       await assert.rejects(catalog.setBarberService(principal, shopA, barberA.id, service.id, { durationMinutes: null, priceMinor: null }), /Service not found/);
       assert.equal(await database.auditEvent.count({ where: { barbershopId: shopA, event: "catalog.service_archived" } }), 1);
+    });
+    await t.test("owner barber profiles preserve roles, reject duplicates and scope members to the shop", async () => {
+      const loaded = await catalog.list(principal, shopA);
+      assert.deepEqual(loaded.availableMembers.map(member => member.id), [ownerMembership.id]);
+      await assert.rejects(catalog.createBarber(null, shopA, ownerMembership.id, "Owner"), /Forbidden/);
+      await assert.rejects(catalog.createBarber(principal, shopA, otherMembership.id, "Other"), /Member not found/);
+      for (const name of [" ", "x".repeat(101)]) await assert.rejects(catalog.createBarber(principal, shopA, ownerMembership.id, name), /Invalid barber name/);
+      const results = await Promise.allSettled([
+        catalog.createBarber(principal, shopA, ownerMembership.id, " Owner barber "),
+        catalog.createBarber(principal, shopA, ownerMembership.id, " Owner barber "),
+      ]);
+      assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
+      assert.equal(results.filter(result => result.status === "rejected").length, 1);
+      const ownerBarber = await database.barber.findUniqueOrThrow({ where: { barbershopId_membershipId: { barbershopId: shopA, membershipId: ownerMembership.id } } });
+      assert.equal(ownerBarber.displayName, "Owner barber");
+      assert.equal((await database.shopMembership.findUniqueOrThrow({ where: { id: ownerMembership.id } })).role, "OWNER");
+      assert.equal((await catalog.list(principal, shopA)).availableMembers.length, 0);
+      assert.equal(await database.auditEvent.count({ where: { barbershopId: shopA, event: "team.barber_created" } }), 1);
+      await assert.rejects(catalog.renameBarber(principal, shopA, barberB.id, "Foreign"), /Barber not found/);
+      await catalog.renameBarber(principal, shopA, ownerBarber.id, "New name");
+      const renamed = await database.auditEvent.findFirstOrThrow({ where: { barbershopId: shopA, event: "team.barber_renamed" } });
+      assert.deepEqual(renamed.details, { barberId: ownerBarber.id, before: "Owner barber", after: "New name" });
+      await database.shopMembership.update({ where: { id: ownerMembership.id }, data: { role: "BARBER" } });
+      await assert.rejects(catalog.renameBarber(principal, shopA, ownerBarber.id, "Stale role"), /Forbidden/);
+      await database.shopMembership.update({ where: { id: ownerMembership.id }, data: { role: "OWNER" } });
+      await database.barbershop.update({ where: { id: shopA }, data: { deletedAt: new Date() } });
+      await assert.rejects(catalog.renameBarber(principal, shopA, ownerBarber.id, "Inactive"), /Forbidden/);
     });
   } finally {
     const where = { barbershopId: { in: [shopA, shopB] } };

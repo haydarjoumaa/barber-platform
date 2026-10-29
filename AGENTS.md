@@ -47,7 +47,8 @@ Build a multi-tenant barbershop booking SaaS. This document is the agreed produc
 - Shop-configurable automatic vs manual approval.
 - Appointment statuses: Pending, Confirmed, Cancelled, Completed, No-show (staff-managed).
 - Daily/weekly/monthly calendar in MVP; drag-and-drop and barber-column enhancements can be deferred/premium.
-- Max booking horizon: **30 days**. No fixed cap on how many appointments a client may hold.
+- Max booking horizon: **30 calendar days ahead at the same shop-local time**, including across daylight-saving changes. No fixed cap on how many appointments a client may hold.
+- Each shop chooses its booking slot interval.
 - Shop-configurable minimum advance notice, cancellation deadline and rescheduling deadline; authorized staff can override policies.
 - Confirmation shows shop, barber, services, date/time, total price and status.
 - Shop closure changes affecting existing bookings require manual handling initially.

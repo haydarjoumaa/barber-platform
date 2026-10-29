@@ -1,3 +1,65 @@
 @import "tailwindcss";
 @import "@barber/ui/styles.css";
 @source "../../../../packages/ui/src";
+
+.account-shell { max-width: 1120px; margin-inline: auto; padding: 24px; }
+.account-card { max-width: 480px; margin: 48px auto; padding: 32px; background: white; border: 1px solid #e4e7ec; border-radius: 20px; }
+.account-card h1 { font-size: 1.8rem; font-weight: 700; margin-block: 20px 8px; }
+.account-card > p, .field-note, .account-switch { color: #596579; }
+.account-form { display: grid; gap: 16px; margin-block: 24px; }
+.account-form label { display: grid; gap: 8px; font-weight: 600; }
+.account-form input, .account-form select { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid #c3cbd7; border-radius: 8px; background: white; color: #172033; font: inherit; }
+.account-form input:focus-visible, .account-form select:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+.field-note { font-size: .85rem; }
+.form-error { padding: 12px; border: 1px solid #f5b7b1; border-radius: 8px; background: #fff3f2; color: #9f2420; }
+.account-switch a { color: #1d4ed8; text-decoration: underline; }
+.account-header-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.workspace-live main { margin-block: 40px; }
+.live-shop { margin-block: 24px; }
+.live-service-list { list-style: none; padding: 0; }
+.live-service-list li { display: flex; justify-content: space-between; gap: 16px; padding-block: 12px; border-bottom: 1px solid #e4e7ec; }
+@media (max-width: 600px) { .account-shell { padding: 16px; } .account-card { margin-block: 24px; padding: 20px; } .account-shell .client-header { flex-wrap: wrap; gap: 16px; } }
+
+.managed-services { list-style: none; padding: 0; }
+.managed-services > li { padding-block: 20px; border-bottom: 1px solid #e4e7ec; }
+.managed-services h4 { font-weight: 700; overflow-wrap: anywhere; }
+.managed-services summary { cursor: pointer; padding-block: 12px; color: #1d4ed8; }
+.service-form fieldset { min-width: 0; display: grid; gap: 16px; border: 0; padding: 0; }
+.service-form legend { font-weight: 700; margin-block-end: 12px; }
+.service-fields { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 16px; }
+.service-archive form { display: grid; gap: 12px; }
+.service-form button { justify-self: start; }
+@media (max-width: 600px) { .service-fields { grid-template-columns: 1fr; } .managed-services .panel-heading { flex-wrap: wrap; } }
+
+.team-management { margin-block-start: 32px; border-top: 1px solid #e4e7ec; padding-block-start: 24px; }
+.barber-profile { padding-block: 20px; border-top: 1px solid #e4e7ec; }
+.barber-profile h4, .barber-service h5 { font-weight: 700; overflow-wrap: anywhere; }
+.barber-profile summary { cursor: pointer; padding-block: 12px; color: #1d4ed8; }
+.barber-service { border: 1px solid #e4e7ec; border-radius: 12px; padding: 16px; margin-block: 16px; }
+.barber-override-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 600px) { .barber-override-fields { grid-template-columns: 1fr; } .barber-service .panel-heading { flex-wrap: wrap; } }
+
+.schedule-panel { margin-block: 20px; }
+.schedule-panel .managed-services > li { display: block; }
+.schedule-panel h5 { font-weight: 700; margin-block: 16px 8px; }
+
+.service-form .override-row { padding: 16px; border: 1px solid #e4e7ec; border-radius: 12px; }
+
+.booking-service-choices { display: flex; flex-wrap: wrap; gap: 16px; }
+.booking-service-choices label { display: flex; align-items: center; gap: 8px; }
+.booking-service-choices input { width: 20px; min-height: 20px; }
+.availability-slots { list-style: none; padding: 0; display: grid; gap: 12px; max-height: 480px; overflow-y: auto; }
+.availability-slots li { display: grid; gap: 6px; padding: 12px; border: 1px solid #e4e7ec; border-radius: 8px; }
+
+.saved-calendar-views a[aria-current="page"] { background: #172033; color: white; }
+.saved-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-block: 20px; }
+.saved-calendar-day { min-width: 0; border: 1px solid #c3cbd7; border-radius: 8px; padding: 10px; overflow-wrap: anywhere; }
+.saved-calendar-day.selected { border: 2px solid #2563eb; }
+.saved-calendar-day.outside-month { background: #f4f6f9; }
+.saved-calendar-day h4 { font-weight: 700; margin-block-end: 12px; }
+.saved-calendar-day h4 a { color: #1d4ed8; text-decoration: underline; }
+.saved-calendar-day ul { list-style: none; padding: 0; display: grid; gap: 12px; }
+.saved-calendar-day li a { display: grid; gap: 6px; font-size: .8rem; padding-block: 8px; border-top: 1px solid #e4e7ec; }
+.saved-calendar-day a:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+@media (max-width: 1000px) { .saved-calendar-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .saved-calendar-grid { grid-template-columns: minmax(0, 1fr); } }

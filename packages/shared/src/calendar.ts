@@ -1,6 +1,15 @@
 import { Temporal } from "@js-temporal/polyfill";
+import { resolveClosureDate } from "./scheduling";
 
 export type CalendarView = "day" | "week" | "month";
+
+/** Inclusive local dates with an exclusive UTC end; DST days need not be 24 hours. */
+export function calendarRange(date: string, view: CalendarView, timeZone: string) {
+  if (!["day", "week", "month"].includes(view)) throw new Error("Invalid calendar view");
+  const dates = calendarDates(date, view);
+  const days = dates.map(date => ({ date, ...resolveClosureDate(date, timeZone) }));
+  return { dates, days, start: days[0]!.start, end: days.at(-1)!.end };
+}
 
 /** Calendar navigation uses local dates, never fixed 24-hour millisecond steps. */
 export function shiftCalendarDate(date: string, view: CalendarView, direction: -1 | 1): string {

@@ -39,6 +39,8 @@ model Barbershop {
   services Service[]
   barberServices BarberService[]
   auditEvents AuditEvent[]
+  closures ShopClosure[]
+  bookingPolicy ShopBookingPolicy?
 
   @@unique([id, currency])
 
@@ -113,6 +115,9 @@ model Barber {
   membership   ShopMembership @relation(fields: [barbershopId, membershipId], references: [barbershopId, id], onDelete: Restrict)
   appointments Appointment[]
   services BarberService[]
+  schedulePeriods BarberSchedulePeriod[]
+  timeOff BarberTimeOff[]
+  scheduleOverrides BarberScheduleOverride[]
 
   @@unique([barbershopId, membershipId])
   @@unique([barbershopId, id])
@@ -150,7 +155,7 @@ model ClientAccount {
   @@map("client_accounts")
 }
 
-// Reservation foundation only. Service/price snapshots and booking workflows follow.
+// Reservation foundation with service snapshots. Booking workflows follow.
 // The SQL migration owns the interval checks and GiST exclusion constraint;
 // Prisma schema generation alone does not install those protections.
 model Appointment {
@@ -158,6 +163,8 @@ model Appointment {
   barbershopId  String @map("barbershop_id") @db.Uuid
   barberId      String @map("barber_id") @db.Uuid
   clientId      String? @map("client_id") @db.Uuid
+  guestName     String? @map("guest_name") @db.VarChar(100)
+  guestPhone    String? @map("guest_phone") @db.VarChar(16)
   status        AppointmentStatus
   startsAt      DateTime @map("starts_at") @db.Timestamptz(3)
   serviceEndsAt DateTime @map("service_ends_at") @db.Timestamptz(3)
@@ -167,6 +174,7 @@ model Appointment {
   barbershop    Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Restrict)
   barber        Barber @relation(fields: [barbershopId, barberId], references: [barbershopId, id], onDelete: Restrict)
   client        Client? @relation(fields: [barbershopId, clientId], references: [barbershopId, id], onDelete: Restrict)
+  services      AppointmentService[]
 
   @@unique([barbershopId, id])
   @@index([barbershopId, startsAt])
@@ -186,6 +194,7 @@ model Service {
   updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
   barbershop      Barbershop @relation(fields: [barbershopId, currency], references: [id, currency], onDelete: Restrict, onUpdate: Restrict)
   barbers         BarberService[]
+  appointmentServices AppointmentService[]
 
   @@unique([barbershopId, id])
   @@map("services")
@@ -207,6 +216,27 @@ model BarberService {
   @@map("barber_services")
 }
 
+// Copied at booking time, never joined to live catalog values for history/totals.
+// Tenant-safe source links retain provenance; catalog edits do not update snapshots.
+model AppointmentService {
+  id String @id @default(uuid()) @db.Uuid
+  barbershopId String @map("barbershop_id") @db.Uuid
+  appointmentId String @map("appointment_id") @db.Uuid
+  serviceId String @map("service_id") @db.Uuid
+  position Int
+  name String @db.VarChar(100)
+  durationMinutes Int @map("duration_minutes")
+  priceMinor Int @map("price_minor")
+  currency String @db.VarChar(3)
+  appointment Appointment @relation(fields: [barbershopId, appointmentId], references: [barbershopId, id], onDelete: Restrict, onUpdate: Restrict)
+  service Service @relation(fields: [barbershopId, serviceId], references: [barbershopId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([barbershopId, appointmentId, position])
+  @@unique([barbershopId, appointmentId, serviceId])
+  @@index([barbershopId, serviceId])
+  @@map("appointment_services")
+}
+
 model AuditEvent {
   id           String @id @default(uuid()) @db.Uuid
   barbershopId String @map("barbershop_id") @db.Uuid
@@ -219,4 +249,68 @@ model AuditEvent {
 
   @@index([barbershopId, createdAt])
   @@map("audit_events")
+}
+
+model BarberSchedulePeriod {
+  id String @id @default(uuid()) @db.Uuid
+  barbershopId String @map("barbershop_id") @db.Uuid
+  barberId String @map("barber_id") @db.Uuid
+  dayOfWeek Int @map("day_of_week")
+  kind String @db.VarChar(5)
+  startMinute Int @map("start_minute")
+  endMinute Int @map("end_minute")
+  startOccurrence String? @map("start_occurrence") @db.VarChar(7)
+  endOccurrence String? @map("end_occurrence") @db.VarChar(7)
+  barber Barber @relation(fields: [barbershopId, barberId], references: [barbershopId, id], onDelete: Restrict)
+  @@unique([barbershopId, id])
+  @@index([barbershopId, barberId, dayOfWeek])
+  @@map("barber_schedule_periods")
+}
+
+model BarberTimeOff {
+  id String @id @default(uuid()) @db.Uuid
+  barbershopId String @map("barbershop_id") @db.Uuid
+  barberId String @map("barber_id") @db.Uuid
+  startsAt DateTime @map("starts_at") @db.Timestamptz(3)
+  endsAt DateTime @map("ends_at") @db.Timestamptz(3)
+  barber Barber @relation(fields: [barbershopId, barberId], references: [barbershopId, id], onDelete: Restrict)
+  @@unique([barbershopId, id])
+  @@index([barbershopId, barberId, startsAt])
+  @@map("barber_time_off")
+}
+
+model BarberScheduleOverride {
+  id String @id @default(uuid()) @db.Uuid
+  barbershopId String @map("barbershop_id") @db.Uuid
+  barberId String @map("barber_id") @db.Uuid
+  date DateTime @db.Date
+  periods Json
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  barber Barber @relation(fields: [barbershopId, barberId], references: [barbershopId, id], onDelete: Restrict)
+  @@unique([barbershopId, barberId, date])
+  @@unique([barbershopId, id])
+  @@map("barber_schedule_overrides")
+}
+
+model ShopClosure {
+  id String @id @default(uuid()) @db.Uuid
+  barbershopId String @map("barbershop_id") @db.Uuid
+  date DateTime @db.Date
+  barbershop Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Restrict)
+  @@unique([barbershopId, date])
+  @@unique([barbershopId, id])
+  @@map("shop_closures")
+}
+
+model ShopBookingPolicy {
+  barbershopId String @id @map("barbershop_id") @db.Uuid
+  slotIntervalMinutes Int @map("slot_interval_minutes")
+  minimumNoticeMinutes Int @map("minimum_notice_minutes")
+  bufferAfterMinutes Int @map("buffer_after_minutes")
+  cancellationNoticeMinutes Int @map("cancellation_notice_minutes")
+  reschedulingNoticeMinutes Int @map("rescheduling_notice_minutes")
+  approvalMode String @map("approval_mode") @db.VarChar(9)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  barbershop Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Restrict)
+  @@map("shop_booking_policies")
 }

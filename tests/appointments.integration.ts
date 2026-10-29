@@ -17,6 +17,9 @@ let anotherBarberA: string;
 let barberB: string;
 let clientA: string;
 let clientB: string;
+let serviceA: string;
+let secondServiceA: string;
+let serviceB: string;
 const at = (minutes: number) => new Date(Date.UTC(2026, 10, 1, 8, minutes));
 
 interface Reservation {
@@ -51,8 +54,8 @@ function sqlState(code: string) {
 test("appointment reservation invariants in PostgreSQL", { timeout: 45_000 }, async t => {
   try {
     await database.barbershop.createMany({ data: [
-      { id: shopA, name: "Reservation A", slug: `test-a-${shopA}` },
-      { id: shopB, name: "Reservation B", slug: `test-b-${shopB}` },
+      { id: shopA, name: "Reservation A", slug: `test-a-${shopA}`, currency: "USD" },
+      { id: shopB, name: "Reservation B", slug: `test-b-${shopB}`, currency: "USD" },
     ] });
     await database.user.create({ data: { id: userId, email: `${userId}@example.invalid` } });
     const barbers = [];
@@ -67,7 +70,71 @@ test("appointment reservation invariants in PostgreSQL", { timeout: 45_000 }, as
     anotherBarberA = (await database.barber.create({ data: { barbershopId: shopA, membershipId: secondMembership.id, displayName: "Another barber" } })).id;
     clientA = (await database.client.create({ data: { barbershopId: shopA, name: "A", phone: "+96170000000" } })).id;
     clientB = (await database.client.create({ data: { barbershopId: shopB, name: "B", phone: "+96170000000" } })).id;
-    t.beforeEach(async () => { await database.appointment.deleteMany({ where: { barbershopId: { in: [shopA, shopB] } } }); });
+    const services = [];
+    for (const shop of [shopA, shopA, shopB]) {
+      services.push(await database.service.create({ data: {
+        barbershopId: shop, name: "Haircut", durationMinutes: 30, priceMinor: 1500, currency: "USD",
+      } }));
+    }
+    [serviceA, secondServiceA, serviceB] = services.map(service => service.id) as [string, string, string];
+    t.beforeEach(async () => {
+      const where = { barbershopId: { in: [shopA, shopB] } };
+      await database.appointmentService.deleteMany({ where });
+      await database.appointment.deleteMany({ where });
+    });
+
+    async function snapshot(appointmentId: string, overrides: Partial<Prisma.AppointmentServiceUncheckedCreateInput> = {}) {
+      return database.appointmentService.create({ data: {
+        barbershopId: shopA, appointmentId, serviceId: serviceA, position: 0,
+        name: "Haircut", durationMinutes: 20, priceMinor: 1250, currency: "USD", ...overrides,
+      } });
+    }
+
+    await t.test("snapshots reject cross-shop appointment and service references", async () => {
+      const appointmentA = await reserve();
+      const appointmentB = await reserve({ shop: shopB, barber: barberB });
+      await assert.rejects(snapshot(appointmentA, { serviceId: serviceB }), { code: "P2003" });
+      await assert.rejects(snapshot(appointmentB), { code: "P2003" });
+      await assert.rejects(snapshot(appointmentA, { barbershopId: shopB, serviceId: serviceB }), { code: "P2003" });
+      await snapshot(appointmentA);
+      await snapshot(appointmentB, { barbershopId: shopB, serviceId: serviceB });
+    });
+
+    await t.test("ordered multi-service snapshots survive catalog edits and archiving", async () => {
+      const appointmentId = await reserve();
+      const first = await snapshot(appointmentId);
+      const second = await snapshot(appointmentId, {
+        serviceId: secondServiceA, position: 1, name: "Beard trim", durationMinutes: 10, priceMinor: 500,
+      });
+      await database.service.update({ where: { id: serviceA }, data: {
+        name: "New haircut", durationMinutes: 45, priceMinor: 3000, archivedAt: new Date(),
+      } });
+      const saved = await database.appointmentService.findMany({
+        where: { barbershopId: shopA, appointmentId }, orderBy: { position: "asc" },
+      });
+      assert.deepEqual(saved, [first, second]);
+      assert.equal(saved.reduce((sum, row) => sum + row.durationMinutes, 0), 30);
+      assert.equal(saved.reduce((sum, row) => sum + row.priceMinor, 0), 1750);
+      await assert.rejects(database.service.delete({ where: { id: serviceA } }), { code: "P2003" });
+      await assert.rejects(database.appointment.delete({ where: { id: appointmentId } }), { code: "P2003" });
+    });
+
+    await t.test("snapshots reject duplicate services/positions and invalid values", async () => {
+      const appointmentId = await reserve();
+      const saved = await snapshot(appointmentId);
+      await assert.rejects(snapshot(appointmentId, { position: 1 }), { code: "P2002" });
+      await assert.rejects(snapshot(appointmentId, { serviceId: secondServiceA }), { code: "P2002" });
+      for (const [column, value] of [
+        ["position", -1], ["duration_minutes", 0], ["duration_minutes", -1], ["price_minor", -1],
+        ["name", "   "], ["currency", "usd"], ["currency", "US"],
+      ] as const) {
+        // Column names come only from the fixed test cases above; values stay parameterized.
+        await assert.rejects(database.$executeRawUnsafe(
+          `UPDATE appointment_services SET "${column}" = $1 WHERE id = $2::uuid`, value, saved.id,
+        ), sqlState("23514"));
+      }
+      await database.appointmentService.update({ where: { id: saved.id }, data: { priceMinor: 0 } });
+    });
 
     await t.test("tenant-safe barber/client relations, including guests", async () => {
       await assert.rejects(reserve({ shop: shopB, barber: barberA }), sqlState("23503"));
@@ -175,7 +242,9 @@ test("appointment reservation invariants in PostgreSQL", { timeout: 45_000 }, as
   } finally {
     const where = { barbershopId: { in: [shopA, shopB] } };
     try {
+      await database.appointmentService.deleteMany({ where });
       await database.appointment.deleteMany({ where });
+      await database.service.deleteMany({ where });
       await database.client.deleteMany({ where });
       await database.barber.deleteMany({ where });
       await database.shopMembership.deleteMany({ where });
