@@ -10,11 +10,14 @@
     "typecheck": "next typegen && tsc --noEmit"
   },
   "dependencies": {
+    "@barber/database": "*",
+    "@barber/auth": "*",
     "@barber/shared": "*",
     "@barber/ui": "*",
     "next": "^16.0.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "@barber/storage": "*"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.0.0",

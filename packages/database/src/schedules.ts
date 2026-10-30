@@ -2,12 +2,14 @@ import { loadStoredSchedule } from "./stored-schedule";
 import type { StaffPrincipal } from "@barber/auth";
 import { resolveBarberSchedule, resolveClosureDate, resolveLocalInterval, shiftCalendarDate, validateSchedulePeriod, overrideFromPeriods, type LocalInterval, type SchedulePeriodInput } from "@barber/shared";
 import type { Prisma, PrismaClient } from "./generated/prisma/client";
+import { withStaffAccess } from "./staff-access";
 import { withShopOwner } from "./owner-transaction";
 
 export function createBarberSchedules(database: PrismaClient) {
   function authorized<T>(principal: StaffPrincipal | null, shopId: string, barberId: string,
     operation: (tx: Prisma.TransactionClient, timeZone: string, actor: string) => Promise<T>) {
-    return withShopOwner(database, principal, shopId, async (tx, shop, actor) => {
+    return withStaffAccess(database, principal, shopId, "schedules", async (tx, shop, actor, access) => {
+      if (access.barberId && barberId !== access.barberId) throw new Error("Forbidden");
       if (!await tx.barber.findUnique({ where: { barbershopId_id: { barbershopId: shopId, id: barberId } } })) throw new Error("Barber not found");
       return operation(tx, shop.time_zone, actor);
     });

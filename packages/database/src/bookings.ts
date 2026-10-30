@@ -1,7 +1,9 @@
 import type { StaffPrincipal } from "@barber/auth";
 import { calendarRange, type CalendarView } from "@barber/shared";
-import type { PrismaClient } from "./generated/prisma/client";
+import type { Prisma, PrismaClient } from "./generated/prisma/client";
 import { searchBookingAvailability } from "./booking-availability";
+import { writeBooking } from "./booking-write";
+import { withStaffAccess, type StaffAccess } from "./staff-access";
 import { withShopOwner } from "./owner-transaction";
 
 export class SlotUnavailableError extends Error {
@@ -40,14 +42,18 @@ function isExclusionConflict(error: unknown): boolean {
  * supplied by request data. No policy overrides or guest accounts are inferred.
  */
 export function createOwnerBookings(database: PrismaClient, clock: () => Date = () => new Date()) {
+  function withBookings<T>(principal: StaffPrincipal | null, shopId: string, operation: (tx: Prisma.TransactionClient, shop: { currency: string | null; time_zone: string }, actor: string, access: StaffAccess) => Promise<T>) {
+    return withStaffAccess(database, principal, shopId, "appointments", operation);
+  }
   function calendar(principal: StaffPrincipal | null, shopId: string, date: string, view: CalendarView) {
-    return withShopOwner(database, principal, shopId, async (tx, shop) => {
+    return withBookings(principal, shopId, async (tx, shop, _actor, access) => {
       const range = calendarRange(date, view, shop.time_zone);
       const appointments = await tx.appointment.findMany({
-        where: { barbershopId: shopId, startsAt: { lt: new Date(range.end) }, occupiedUntil: { gt: new Date(range.start) } },
+        where: { barbershopId: shopId, ...(access.barberId ? { barberId: access.barberId } : {}), startsAt: { lt: new Date(range.end) }, occupiedUntil: { gt: new Date(range.start) } },
         orderBy: [{ startsAt: "asc" }, { id: "asc" }],
         select: { id: true, startsAt: true, serviceEndsAt: true, occupiedUntil: true, status: true, guestName: true, guestPhone: true,
-          client: { select: { name: true, phone: true } }, barber: { select: { displayName: true } },
+          client: { select: { id: true, name: true, phone: true } }, barber: { select: { displayName: true } },
+          payments: { where: { voidedAt: null }, select: { id: true, amountMinor: true, currency: true, createdAt: true } },
           services: { orderBy: { position: "asc" }, select: { name: true, priceMinor: true, currency: true } } },
       });
       return { date, view, days: range.days, timeZone: shop.time_zone, appointments };
@@ -55,13 +61,29 @@ export function createOwnerBookings(database: PrismaClient, clock: () => Date = 
   }
   return {
     calendar,
+    catalog(principal: StaffPrincipal | null, shopId: string) {
+      return withBookings(principal, shopId, async (tx, _shop, _actor, access) => ({
+        services: await tx.service.findMany({ where: { barbershopId: shopId, archivedAt: null }, select: { id: true, name: true } }),
+        barbers: await tx.barber.findMany({ where: { barbershopId: shopId, ...(access.barberId ? { id: access.barberId } : {}) }, select: { id: true, displayName: true } }),
+      }));
+    },
+    correctOutcome(principal: StaffPrincipal | null, shopId: string, appointmentId: string,
+      input: { expectedStatus: "COMPLETED" | "NO_SHOW"; outcome: "COMPLETED" | "NO_SHOW"; reason: string }) {
+      return withShopOwner(database, principal, shopId, async (tx, _shop, actorUserId) => {
+        if (!uuid.test(appointmentId) || !["COMPLETED", "NO_SHOW"].includes(input.expectedStatus) || !["COMPLETED", "NO_SHOW"].includes(input.outcome) ||
+          input.expectedStatus === input.outcome || typeof input.reason !== "string" || !input.reason.trim() || input.reason.trim().length > 500) throw new Error("Invalid outcome correction");
+        const changed = await tx.appointment.updateMany({ where: { barbershopId: shopId, id: appointmentId, status: input.expectedStatus }, data: { status: input.outcome } });
+        if (changed.count !== 1) throw new Error("Appointment changed");
+        await tx.auditEvent.create({ data: { barbershopId: shopId, actorUserId, event: "booking.outcome_corrected", details: { appointmentId, previousStatus: input.expectedStatus, status: input.outcome, reason: input.reason.trim() } } });
+      });
+    },
     recordOutcome(principal: StaffPrincipal | null, shopId: string, appointmentId: string,
       input: { expectedStatus: "PENDING" | "CONFIRMED"; outcome: "COMPLETED" | "NO_SHOW" }) {
-      return withShopOwner(database, principal, shopId, async (tx, _shop, actorUserId) => {
+      return withBookings(principal, shopId, async (tx, _shop, actorUserId, access) => {
         if (!uuid.test(appointmentId) || !["PENDING", "CONFIRMED"].includes(input.expectedStatus) || !["COMPLETED", "NO_SHOW"].includes(input.outcome)) throw new Error("Invalid appointment outcome");
         // Staff explicitly record the outcome; never infer attendance or payment from time.
         const changed = await tx.appointment.updateMany({
-          where: { id: appointmentId, barbershopId: shopId, status: input.expectedStatus },
+          where: { id: appointmentId, barbershopId: shopId, ...(access.barberId ? { barberId: access.barberId } : {}), status: input.expectedStatus },
           data: { status: input.outcome },
         });
         if (changed.count !== 1) throw new Error("Appointment changed");
@@ -73,10 +95,11 @@ export function createOwnerBookings(database: PrismaClient, clock: () => Date = 
     },
     cancel(principal: StaffPrincipal | null, shopId: string, appointmentId: string,
       input: { expectedStatus: "PENDING" | "CONFIRMED"; overrideDeadline: boolean }) {
-      return withShopOwner(database, principal, shopId, async (tx, _shop, actorUserId) => {
+      return withBookings(principal, shopId, async (tx, _shop, actorUserId, access) => {
         if (!uuid.test(appointmentId) || !["PENDING", "CONFIRMED"].includes(input.expectedStatus) || typeof input.overrideDeadline !== "boolean") throw new Error("Invalid cancellation");
         const appointment = await tx.appointment.findUnique({ where: { barbershopId_id: { barbershopId: shopId, id: appointmentId } } });
-        if (!appointment || appointment.status !== input.expectedStatus) throw new Error("Appointment changed");
+        if (!appointment || (access.barberId && appointment.barberId !== access.barberId) || appointment.status !== input.expectedStatus) throw new Error("Appointment changed");
+        if (input.overrideDeadline && !access.owner) throw new Error("Forbidden");
         const policy = await tx.shopBookingPolicy.findUnique({ where: { barbershopId: shopId } });
         if (!policy) throw new Error("Booking policy missing");
         const checkedAt = clock();
@@ -85,7 +108,7 @@ export function createOwnerBookings(database: PrismaClient, clock: () => Date = 
         const deadlinePassed = checkedAt.getTime() > deadline;
         if (deadlinePassed && !input.overrideDeadline) throw new CancellationDeadlineError();
         const changed = await tx.appointment.updateMany({
-          where: { id: appointmentId, barbershopId: shopId, status: input.expectedStatus, startsAt: appointment.startsAt },
+          where: { id: appointmentId, barbershopId: shopId, ...(access.barberId ? { barberId: access.barberId } : {}), status: input.expectedStatus, startsAt: appointment.startsAt },
           data: { status: "CANCELLED" },
         });
         if (changed.count !== 1) throw new Error("Appointment changed");
@@ -96,11 +119,11 @@ export function createOwnerBookings(database: PrismaClient, clock: () => Date = 
       });
     },
     confirm(principal: StaffPrincipal | null, shopId: string, appointmentId: string) {
-      return withShopOwner(database, principal, shopId, async (tx, _shop, actorUserId) => {
+      return withBookings(principal, shopId, async (tx, _shop, actorUserId, access) => {
         if (!uuid.test(appointmentId)) throw new Error("Invalid appointment");
         // Compare and update atomically: stale forms cannot revive cancelled bookings.
         const changed = await tx.appointment.updateMany({
-          where: { id: appointmentId, barbershopId: shopId, status: "PENDING" },
+          where: { id: appointmentId, barbershopId: shopId, ...(access.barberId ? { barberId: access.barberId } : {}), status: "PENDING" },
           data: { status: "CONFIRMED" },
         });
         if (changed.count !== 1) throw new Error("Pending appointment not found");
@@ -111,12 +134,12 @@ export function createOwnerBookings(database: PrismaClient, clock: () => Date = 
       });
     },
     clients(principal: StaffPrincipal | null, shopId: string) {
-      return withShopOwner(database, principal, shopId, tx => tx.client.findMany({
+      return withBookings(principal, shopId, tx => tx.client.findMany({
         where: { barbershopId: shopId }, select: { id: true, name: true, phone: true }, orderBy: [{ name: "asc" }, { id: "asc" }],
       }));
     },
     registerClient(principal: StaffPrincipal | null, shopId: string, input: { name: string; phone: string }) {
-      return withShopOwner(database, principal, shopId, async (tx, _shop, actorUserId) => {
+      return withBookings(principal, shopId, async (tx, _shop, actorUserId) => {
         const name = input.name.trim(), phone = input.phone.trim();
         // Require an explicit international number; never guess the country code.
         if (!name || name.length > 100 || !/^\+[1-9]\d{7,14}$/.test(phone)) throw new Error("Invalid client");
@@ -130,7 +153,8 @@ export function createOwnerBookings(database: PrismaClient, clock: () => Date = 
     },
     async create(principal: StaffPrincipal | null, shopId: string, input: OwnerBookingInput) {
       try {
-        return await withShopOwner(database, principal, shopId, async (tx, shop, actorUserId) => {
+        return await withBookings(principal, shopId, async (tx, shop, actorUserId, access) => {
+          if (access.barberId && input.barberId !== access.barberId) throw new Error("Forbidden");
           if (!uuid.test(input.barberId) ||
             !Array.isArray(input.serviceIds) || !input.serviceIds.length ||
             input.serviceIds.some(id => typeof id !== "string" || !uuid.test(id)) ||
@@ -161,14 +185,7 @@ export function createOwnerBookings(database: PrismaClient, clock: () => Date = 
           const available = await searchBookingAvailability(tx, shopId, shop, input, clock());
           const slot = available.slots.find(slot => slot.barberId === input.barberId && slot.start === input.startsAt);
           if (!slot) throw new SlotUnavailableError();
-          const appointment = await tx.appointment.create({ data: {
-            barbershopId: shopId, barberId: slot.barberId, clientId, guestName, guestPhone,
-            status: available.approvalMode === "AUTOMATIC" ? "CONFIRMED" : "PENDING",
-            startsAt: new Date(slot.start), serviceEndsAt: new Date(slot.serviceEnd), occupiedUntil: new Date(slot.occupiedEnd),
-          } });
-          await tx.appointmentService.createMany({ data: slot.services.map(service => ({
-            ...service, barbershopId: shopId, appointmentId: appointment.id,
-          })) });
+          const appointment = await writeBooking(tx, shopId, slot, available.approvalMode, { clientId, guestName, guestPhone });
           await tx.auditEvent.create({ data: {
             barbershopId: shopId, actorUserId, event: "booking.created",
             details: { appointmentId: appointment.id, clientId, bookingIdentity: input.guest ? "guest" : input.newClient ? "new_client" : "existing_client", barberId: slot.barberId,

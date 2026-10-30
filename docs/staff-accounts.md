@@ -19,3 +19,5 @@ Manual browser checks: test registration/login errors in both English and Arabic
 Request-policy regression tests run without a database using `npm test`. They cover exact Origin matching, rejection of missing/cross-origin requests, loopback-only HTTP configuration, canonical origin validation and the secure cookie name for HTTPS.
 
 Validation on October 28, 2026: lint, workspace typechecking, 121 unit tests and both production builds passed. Builds required running outside the execution sandbox. PostgreSQL integration tests could not run: `DATABASE_URL` was absent and the local Docker socket denied access even outside the sandbox. Browser account flows remain unverified. The available runtime was Node 20.20.2; repeat validation on the required Node 22.12+ before beta.
+
+Latest extension: staff invitation acceptance and owner-granted appointment/schedule capabilities are described in [staff team](staff-team.md). Staff password recovery remains unresolved. The most recent changes were made without tests or builds at the user’s request.

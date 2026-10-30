@@ -9,7 +9,7 @@ export async function withShopOwner<T>(database: PrismaClient, principal: StaffP
     const [shop] = await tx.$queryRaw<{ currency: string | null; time_zone: string }[]>`
       SELECT s.currency, s.time_zone FROM barbershops s JOIN shop_memberships m ON m.barbershop_id = s.id
       WHERE s.id = ${barbershopId}::uuid AND m.user_id = ${principal!.userId}::uuid
-        AND m.role = 'OWNER' AND s.deleted_at IS NULL
+        AND m.role = 'OWNER' AND s.deleted_at IS NULL AND s.suspended_at IS NULL
       FOR UPDATE OF s, m`;
     if (!shop) throw new Error("Forbidden");
     return operation(tx, shop, principal!.userId);

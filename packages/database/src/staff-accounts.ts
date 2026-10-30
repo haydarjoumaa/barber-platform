@@ -39,6 +39,35 @@ export function createStaffAccounts(database: PrismaClient, passwords: Passwords
     return { token, expiresAt };
   }
   return {
+    async acceptInvite(input: { email: string; code: string; password: string }, previousToken?: string) {
+      const email = emailAddress(input.email);
+      await throttle("register", email ?? "invalid");
+      if (!email || !validToken(input.code)) throw new AccountError("INVALID_INPUT");
+      const invite = await database.staffInvite.findFirst({ where: { tokenHash: digest(input.code), email, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() }, shop: { deletedAt: null, suspendedAt: null } } });
+      if (!invite) throw new AccountError("INVALID_CREDENTIALS");
+      const existing = await database.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } } });
+      const verified = await passwords.verifyAccountPassword(input.password, existing?.passwordHash ?? null);
+      if (existing && !verified) throw new AccountError("INVALID_CREDENTIALS");
+      if (!existing && (typeof input.password !== "string" || [...input.password].length < 12 || Buffer.byteLength(input.password, "utf8") > 1024)) throw new AccountError("INVALID_INPUT");
+      const passwordHash = existing ? existing.passwordHash : await passwords.hashPassword(input.password);
+      return database.$transaction(async tx => {
+        const [shop] = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM barbershops WHERE id = ${invite.barbershopId}::uuid AND deleted_at IS NULL AND suspended_at IS NULL FOR UPDATE`;
+        if (!shop) throw new AccountError("INVALID_CREDENTIALS");
+        if (existing) {
+          const [locked] = await tx.$queryRaw<{ password_hash: string | null }[]>`SELECT password_hash FROM users WHERE id = ${existing.id}::uuid FOR UPDATE`;
+          if (locked?.password_hash !== passwordHash) throw new AccountError("INVALID_CREDENTIALS");
+        }
+        const current = existing ? await tx.user.findUnique({ where: { id: existing.id } }) : null;
+        if (existing && current?.passwordHash !== passwordHash) throw new AccountError("INVALID_CREDENTIALS");
+        const claimed = await tx.staffInvite.updateMany({ where: { id: invite.id, tokenHash: digest(input.code), acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } }, data: { acceptedAt: new Date() } });
+        if (claimed.count !== 1) throw new AccountError("INVALID_CREDENTIALS");
+        const user = current ?? await tx.user.create({ data: { email, passwordHash } });
+        const member = await tx.shopMembership.create({ data: { userId: user.id, barbershopId: shop.id, role: invite.role, manageAppointments: invite.manageAppointments, manageSchedules: invite.manageSchedules } });
+        if (invite.role === "BARBER") await tx.barber.create({ data: { barbershopId: shop.id, membershipId: member.id, displayName: invite.displayName } });
+        await tx.auditEvent.create({ data: { barbershopId: shop.id, actorUserId: user.id, event: "team.invite_accepted", details: { inviteId: invite.id, membershipId: member.id, role: invite.role } } });
+        return session(tx, user.id, previousToken);
+      });
+    },
     async register(input: OwnerRegistration, previousToken?: string) {
       const email = emailAddress(input.email);
       await throttle("register", email ?? "invalid");
@@ -83,7 +112,7 @@ export function createStaffAccounts(database: PrismaClient, passwords: Passwords
         const now = new Date();
         const active = await tx.staffSession.updateMany({ where: { tokenHash: digest(token), expiresAt: { gt: now }, lastSeenAt: { gt: new Date(now.getTime() - IDLE_MS) } }, data: { lastSeenAt: now } });
         if (!active.count) return null;
-        const stored = await tx.staffSession.findUniqueOrThrow({ where: { tokenHash: digest(token) }, select: { userId: true, user: { select: { memberships: { where: { barbershop: { deletedAt: null } }, select: { barbershopId: true, role: true } } } } } });
+        const stored = await tx.staffSession.findUniqueOrThrow({ where: { tokenHash: digest(token) }, select: { userId: true, user: { select: { memberships: { where: { barbershop: { deletedAt: null, suspendedAt: null } }, select: { barbershopId: true, role: true } } } } } });
         return { userId: stored.userId, memberships: stored.user.memberships };
       });
     },

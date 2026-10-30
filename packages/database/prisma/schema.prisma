@@ -21,14 +21,25 @@ enum AppointmentStatus {
   NO_SHOW
 }
 
+enum MediaKind {
+  SHOP_LOGO
+  PROFILE
+  HAIRCUT
+}
+
 model Barbershop {
   id          String   @id @default(uuid()) @db.Uuid
   name        String
+  phone       String? @db.VarChar(16)
+  address     String? @db.VarChar(500)
+  description String? @db.VarChar(2000)
+  brandColor  String @default("#2563eb") @map("brand_color") @db.VarChar(7)
   slug        String   @unique
   timeZone    String   @default("Asia/Beirut") @map("time_zone")
   currency    String?  @db.VarChar(3)
   publishedAt DateTime? @map("published_at") @db.Timestamptz(3)
   deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3)
+  suspendedAt DateTime? @map("suspended_at") @db.Timestamptz(3)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
   memberships ShopMembership[]
@@ -41,6 +52,9 @@ model Barbershop {
   auditEvents AuditEvent[]
   closures ShopClosure[]
   bookingPolicy ShopBookingPolicy?
+  clientEvents ClientEvent[]
+  staffInvites StaffInvite[]
+  mediaAssets MediaAsset[]
 
   @@unique([id, currency])
 
@@ -55,10 +69,32 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   memberships  ShopMembership[]
   auditEvents AuditEvent[]
+  recordedPayments Payment[]
+  platformAdmin PlatformAdmin?
+  platformEvents PlatformAuditEvent[]
+  mediaUploads MediaAsset[]
 
   @@map("users")
   sessions StaffSession[]
   authEvents StaffAuthEvent[]
+}
+
+model PlatformAdmin {
+  userId String @id @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  @@map("platform_admins")
+}
+
+model PlatformAuditEvent {
+  id String @id @default(uuid()) @db.Uuid
+  actorUserId String @map("actor_user_id") @db.Uuid
+  event String @db.VarChar(64)
+  details Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  actor User @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  @@index([createdAt])
+  @@map("platform_audit_events")
 }
 
 model StaffSession {
@@ -97,6 +133,8 @@ model ShopMembership {
   barbershopId String @map("barbershop_id") @db.Uuid
   userId       String @map("user_id") @db.Uuid
   role         StaffRole
+  manageAppointments Boolean @default(false) @map("manage_appointments")
+  manageSchedules Boolean @default(false) @map("manage_schedules")
   barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Restrict)
   user         User @relation(fields: [userId], references: [id], onDelete: Restrict)
   barber       Barber?
@@ -104,6 +142,24 @@ model ShopMembership {
   @@unique([barbershopId, userId])
   @@unique([barbershopId, id])
   @@map("shop_memberships")
+}
+
+model StaffInvite {
+  id String @id @default(uuid()) @db.Uuid
+  barbershopId String @map("barbershop_id") @db.Uuid
+  tokenHash String @unique @map("token_hash") @db.VarChar(64)
+  email String @db.VarChar(254)
+  displayName String @map("display_name") @db.VarChar(100)
+  role StaffRole
+  manageAppointments Boolean @default(false) @map("manage_appointments")
+  manageSchedules Boolean @default(false) @map("manage_schedules")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  acceptedAt DateTime? @map("accepted_at") @db.Timestamptz(3)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
+  shop Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Restrict)
+  @@unique([barbershopId, id])
+  @@index([barbershopId, email])
+  @@map("staff_invites")
 }
 
 model Barber {
@@ -131,14 +187,43 @@ model Client {
   name         String
   phone        String
   email        String?
+  birthday     DateTime? @db.Date
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Restrict)
   account      ClientAccount?
   appointments Appointment[]
+  sessions ClientSession[]
+  resetTokens ClientResetToken[]
+  events ClientEvent[]
+  photos MediaAsset[]
 
   @@unique([barbershopId, phone])
   @@unique([barbershopId, id])
   @@map("clients")
+}
+
+model MediaAsset {
+  id String @id @default(uuid()) @db.Uuid
+  barbershopId String @map("barbershop_id") @db.Uuid
+  clientId String? @map("client_id") @db.Uuid
+  uploadedByUserId String? @map("uploaded_by_user_id") @db.Uuid
+  kind MediaKind
+  storageKey String @unique @map("storage_key") @db.VarChar(40)
+  mimeType String @map("mime_type") @db.VarChar(32)
+  byteSize Int @map("byte_size")
+  width Int
+  height Int
+  consentAt DateTime @map("consent_at") @db.Timestamptz(3)
+  consentSource String @map("consent_source") @db.VarChar(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  removedAt DateTime? @map("removed_at") @db.Timestamptz(3)
+  purgedAt DateTime? @map("purged_at") @db.Timestamptz(3)
+  shop Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Restrict)
+  client Client? @relation(fields: [barbershopId, clientId], references: [barbershopId, id], onDelete: Restrict)
+  uploader User? @relation(fields: [uploadedByUserId], references: [id], onDelete: Restrict)
+  @@unique([barbershopId, id])
+  @@index([barbershopId, clientId, createdAt])
+  @@map("media_assets")
 }
 
 // Phone is held on Client to avoid diverging account/profile phone values.
@@ -153,6 +238,41 @@ model ClientAccount {
 
   @@unique([barbershopId, clientId])
   @@map("client_accounts")
+}
+
+model ClientSession {
+  tokenHash String @id @map("token_hash") @db.VarChar(64)
+  barbershopId String @map("barbershop_id") @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  lastSeenAt DateTime @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  client Client @relation(fields: [barbershopId, clientId], references: [barbershopId, id], onDelete: Cascade)
+  @@index([barbershopId, clientId])
+  @@index([expiresAt])
+  @@map("client_sessions")
+}
+
+model ClientResetToken {
+  tokenHash String @id @map("token_hash") @db.VarChar(64)
+  barbershopId String @map("barbershop_id") @db.Uuid
+  clientId String @map("client_id") @db.Uuid
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  client Client @relation(fields: [barbershopId, clientId], references: [barbershopId, id], onDelete: Cascade)
+  @@unique([barbershopId, clientId])
+  @@map("client_reset_tokens")
+}
+
+model ClientEvent {
+  id String @id @default(uuid()) @db.Uuid
+  barbershopId String @map("barbershop_id") @db.Uuid
+  clientId String? @map("client_id") @db.Uuid
+  event String @db.VarChar(64)
+  details Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  shop Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Restrict)
+  client Client? @relation(fields: [barbershopId, clientId], references: [barbershopId, id], onDelete: Restrict)
+  @@index([barbershopId, createdAt])
+  @@map("client_events")
 }
 
 // Reservation foundation with service snapshots. Booking workflows follow.
@@ -175,11 +295,30 @@ model Appointment {
   barber        Barber @relation(fields: [barbershopId, barberId], references: [barbershopId, id], onDelete: Restrict)
   client        Client? @relation(fields: [barbershopId, clientId], references: [barbershopId, id], onDelete: Restrict)
   services      AppointmentService[]
+  payments      Payment[]
 
   @@unique([barbershopId, id])
   @@index([barbershopId, startsAt])
   @@index([barbershopId, clientId, startsAt])
   @@map("appointments")
+}
+
+// In-shop receipts only. The migration enforces one non-voided receipt per appointment.
+model Payment {
+  id String @id @default(uuid()) @db.Uuid
+  barbershopId String @map("barbershop_id") @db.Uuid
+  appointmentId String @map("appointment_id") @db.Uuid
+  recordedBy String @map("recorded_by") @db.Uuid
+  amountMinor BigInt @map("amount_minor")
+  currency String @db.VarChar(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  voidedAt DateTime? @map("voided_at") @db.Timestamptz(3)
+  voidReason String? @map("void_reason") @db.VarChar(500)
+  appointment Appointment @relation(fields: [barbershopId, appointmentId], references: [barbershopId, id], onDelete: Restrict, onUpdate: Restrict)
+  recorder User @relation(fields: [recordedBy], references: [id], onDelete: Restrict)
+  @@unique([barbershopId, id])
+  @@index([barbershopId, createdAt])
+  @@map("payments")
 }
 
 model Service {

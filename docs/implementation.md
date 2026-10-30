@@ -1,41 +1,61 @@
-# Implementation status and next increments
+# Implementation status
 
-The scaffold now includes bilingual application layouts. The authenticated owner workspace now supports client registration, slot selection, booking and a persisted daily appointment view. Public client booking remains pending.
+This is an implementation handoff, not a production-readiness claim. The user requested that testing stop. No tests, lint, type checks, builds, browser checks or database verification have been run for the latest implementation pass. Earlier results (281 unit tests and both builds passing) predate these changes and do not validate them. Prisma client and app-icon generation were run to create required artifacts.
 
-Implemented:
-- Owner approval of pending appointments from the daily list, with English/Arabic controls, verified sessions/origin, database permission rechecks and atomic status/audit writes. Concurrent or stale approvals cannot duplicate audit events or revive other appointment states. Integration coverage includes tenant isolation, revoked owner access, shop deactivation and audit-failure rollback. Owner cancellation of pending/confirmed appointments enforces the saved deadline with an explicit audited owner override. It preserves snapshots, releases occupancy and rejects stale/concurrent requests. Owners can also explicitly record Completed or No-show from pending/confirmed appointments with bilingual confirmation controls, conditional writes and atomic audit events. These preserve occupancy and snapshots; payment recording and outcome corrections remain pending.
-- Two independent Next.js applications, TypeScript, Tailwind and shared UI.
-- npm workspace packages for database, auth boundaries and shared contracts.
-- PostgreSQL Compose service and a Prisma migration for shops, staff users, memberships, barber profiles, clients and client credentials.
-- Composite tenant foreign keys, per-shop phone uniqueness and deny-by-default owner authorization helper.
-- Server-only password hashing/verification with versioned scrypt records and strict input bounds. See [password storage](passwords.md); staff account actions and sessions use these helpers; client authentication remains pending.
-- Shared password-work capacity limit and login-oriented verification with equivalent hashing work for missing/malformed account records. Staff account actions have database-backed rate limits.
-- Appointment reservation schema and SQL migration with tenant-safe barber/client relations, interval checks and a PostgreSQL exclusion constraint. Real concurrent-writer integration tests are included; see [reservation boundaries](reservations.md). Tenant-safe ordered service/price snapshot storage and database regression tests are included; an owner-only transactional repository now revalidates availability and creates existing-client, quick new-client and guest bookings, authoritative snapshots and audit events atomically. The authenticated server action and booking form now connect this repository to the workspace, including client selection and localized confirmation.
-- Persistent service catalog, shop currency and barber-specific price/duration overrides. Owner-only server repositories recheck database permissions and append transactional audit events; active catalog records compose with availability. See [catalog boundaries](catalog.md). Authenticated owner service creation, editing and archiving forms are connected; barber profile creation/renaming and service assignment forms are also connected; public APIs remain pending.
-- Slug validation, Beirut date formatting, locale direction helpers and an offline banner.
-- Unit tests and a PostgreSQL integration test for cross-shop relationships.
-- Explicit owner booking policies and an authenticated availability check using saved schedules, date replacements, closures, time off, appointment occupancy and authoritative service overrides. Shop-selected slot intervals, minimum notice, buffers and the 30-calendar-day horizon are enforced for availability and transactional owner bookings. Approval and cancellation/rescheduling policy values are stored; approval is enforced by the owner booking repository; owner cancellation enforces the saved deadline; client cancellation and rescheduling remain pending.
-- Pure shared availability calculations for explicit UTC candidate slots, combined service durations/prices, barber overrides, closures, buffers and tenant consistency checks. See [availability boundaries](availability.md).
-- Owner weekly shift/break and dated time-off forms, tenant-safe persistence, transactional audit events and a date preview with overnight carry-in. Date-specific replacements and whole-shop closure dates are included in persistence and previews.
-- Shared local schedule expansion with weekly hours, date replacements, overnight shifts/breaks, time off, full-day closures and explicit Beirut DST error handling. See [scheduling](scheduling.md).
-- Responsive Business App sections for overview, appointments, services, team and shop profile, with explicit unavailable-action states.
-- Redesigned light/charcoal/blue interfaces and shared SVG icons. The old preview calendar remains unconnected. The working workspace now includes date-navigable, persisted day/week/month appointment views with URL navigation and day links for appointment actions; the Business App root opens this workspace instead of the preview. See [interface boundaries](interface.md).
-- Client landing page with shop-link guidance, booking explanation and expandable FAQs; no directory or cross-shop discovery.
-- English/Arabic translations for current screens, language selection persisted in a non-sensitive cookie, server-rendered language/direction and a translated offline banner.
+## Implemented in code
 
-Staff registration, email/password login, logout and opaque database sessions are implemented in the Business App, with English/Arabic account forms and a protected owner workspace. See [staff account setup and boundaries](staff-accounts.md). The database account repository builds principals from session records; catalog operations recheck membership against the database. The database wrapper does not automatically scope queries or implement row-level security. Staff-created client profiles accept explicit international phone numbers without guessing country codes. Broader phone normalization, client authentication, staff recovery, invitations and full onboarding remain pending. The existing staff email/password implementation does not resolve the outstanding recovery design.
+- Two independent Next.js/TypeScript/Tailwind apps with shared UI, authentication, database and domain packages; PostgreSQL/Prisma and local Compose setup.
+- Tenant-safe relations and database-level exclusion constraints for appointment overlap, shared schedule/availability calculations, Beirut timezone/DST handling and the 30-calendar-day booking horizon.
+- Owner registration, staff email/password login, opaque sessions, origin validation, password hashing, attempt limits and audit events.
+- Owner shop name/slug editing with reserved routes, uniqueness and stale-edit detection; contact phone, address, description and accent color editing. Saving does not publish a shop.
+- Service catalog, barber profiles and overrides, working periods/breaks, time off, dated schedule replacements and shop closures.
+- Staff-created existing-client, quick new-client and guest appointments, saved service snapshots, pending approval, cancellation/deadline override, completed/no-show outcomes and audited outcome correction.
+- Day/week/month calendars with client/phone/barber search and status filters; manual English/Arabic WhatsApp message previews and click-to-chat links.
+- Owner client directory and paginated appointment histories. Staff-assisted setup/recovery codes are issued only after explicit identity verification.
+- In-shop full-payment receipts, paid/unpaid status, audited receipt corrections, recorded revenue by barber/currency and custom date-range appointment counts. No online checkout or paid integration.
+- Staff invitations with one-use, expiring hashed codes, invitation revocation, existing-identity password verification and separate barber/receptionist membership. Owners can grant appointment and schedule permissions separately. Staff workspaces enforce barber ownership or receptionist shop scope in database-backed authorization.
+- Public shop-specific client routes, gated to active published shops. Phone/password registration and login, separate shop-bound cookies, one-time staff-assisted password setup/reset, session revocation, profile editing, upcoming/history views and policy-enforced cancellation.
+- Public guest/account booking, multi-service selection and any/specific barber availability. Owner and client writes reuse the same server-only availability and snapshot-persistence code; transaction and exclusion protections remain in place.
+- Separate platform-administrator role, explicit local operator bootstrap, paginated shop listing, audited suspension/reactivation and audited read-only support views. No automatic administrator grants.
+- English/Arabic controls for the implemented flows, shared account styling and RTL-aware layout. PWA manifests/icons and network-only offline-notice workers for the current separate-port setup; no account/appointment caching or offline writes.
+- Local shop logos and private client profile/haircut galleries, consent records, bounded image decoding/re-encoding, shared filesystem storage abstraction and operator cleanup command. Only published shop logos are public.
+- Local Compose backup/explicit restore scripts. No backup schedule or restore was executed.
 
-Next, in reviewable increments:
+## Written migrations, not applied here
 
-Rescheduling preparation: availability now uses a shared internal schedule/occupancy loader. A future authorized move can exclude its own appointment while retaining every other booking, buffer and schedule blocker. Regression tests cover this exclusion. No rescheduling mutation or UI is connected yet: the product choice between preserving original prices/durations/buffer and applying current catalog values is awaiting clarification.
+1. `20261030000100_in_shop_payments`: receipt ledger and one-active-receipt constraint.
+2. `20261030000200_client_sessions`: birthdays, client sessions, reset codes and client security events.
+3. `20261030000300_shop_details`: phone, address, description and accent color.
+4. `20261030000400_staff_invitations`: invitations and appointment/schedule permissions, disabled by default for existing non-owner memberships.
+5. `20261030000500_platform_admin`: platform roles/audit events and shop suspension.
+6. `20261030000600_local_media`: tenant-scoped images, consent metadata and active logo/profile uniqueness.
 
-1. Resolve staff recovery, exact mandatory shop publication fields and gateway choice. Extend the existing staff sessions, rate limits, RBAC and audit events to the remaining account workflows. Clients use phone + password and staff-assisted recovery as agreed.
-2. Extend owner registration with onboarding, slug suggestions, publication validation, barber/service management and English/Arabic UI. Owner accounts activate immediately; storefront publication waits for required fields.
-3. Extend the owner-only availability check into a publication-aware client API after onboarding and client access boundaries are implemented.
-4. Extend the working owner booking form with outcome corrections and rescheduling. Add HTTP-level race tests; repository and database races are already covered. The exclusion constraint, server availability revalidation, policy enforcement, service snapshots and transactional repository concurrency tests are implemented.
-5. Further business calendar enhancements, client booking/dashboard, cancellation/rescheduling, in-shop payment records and manual WhatsApp links.
-6. PWA installation, scoped manifests and service workers, translations/RTL verification for future workflows, validated local uploads with consent and storage abstraction, backup/restore checks and private-beta hardening.
+The configured database was offline before the no-testing instruction. No further database connection attempts were made after that instruction. Apply all migrations once the local database is running; do not substitute `prisma db push`, which cannot install the custom SQL constraints.
 
-PWA installation, full Arabic localization, client authentication and staff recovery, complete booking workflows, staff booking-policy overrides, public availability APIs, billing and deployment are not implemented. The offline banner is available only after a page has loaded; offline launching is not yet supported. No production hosting or paid API is configured.
+## Decisions currently awaiting the user
 
-Guest/quick-booking increment: bilingual booking identity selection, atomic register-and-book, optional guest phone, named guests in calendar views and tap-to-call on daily records. Guest contact fields have an additive migration and database validation. A focused database smoke check covers no-profile guests, quick-book rollback, duplicate phone handling and authorization; full regression and visual checks deferred at user request.
+- Rescheduling: preserve original service prices/durations/buffer, or apply current catalog values? The shared occupancy loader already supports excluding the appointment being moved, but no reschedule mutation/UI is connected.
+- Publication: the proposed required fields are name, unique slug, phone, address, timezone, currency, active services and at least one configured/scheduled barber. Booking policy configuration must also be present for public availability. The publishing workflow is not enabled until the requirements are confirmed.
+- Routing: local reverse proxy for `/business`, `/admin` and shop slugs, or separate ports for now? Apps remain on 3001/3002. Gateway cookie, asset and service-worker scopes have not been wired.
+
+## Still unfinished
+
+- Guided onboarding and publication; rescheduling; selected single-domain gateway/shared HTTP API deployment arrangement.
+- Staff password recovery, staff membership removal and broader owner-assigned capabilities beyond appointment/schedule management.
+- Public shop photo galleries and editable phone/account identity changes.
+- Walk-in-specific policy overrides/optional queue, shop deletion with 30-day recovery/purge and retention policy handling.
+- Platform feature flags/settings and future plan controls; paid billing is deliberately not a launch prerequisite.
+- Private-beta verification, production hardening/deployment and actual backup scheduling/restore verification. These are not claimed complete.
+
+Advanced customization, multi-branch support, loyalty, automated messaging and advanced analytics remain deferred under AGENTS.md.
+
+## Feature notes
+
+- [Client access and booking](client-access.md)
+- [Staff invitations and permissions](staff-team.md)
+- [Payments and basic reports](payments.md)
+- [Platform administration](platform-administration.md)
+- [Local logos and client photos](media.md)
+- [Local operations and PWA packaging](local-operations.md)
+- [Shop profile](shop-profile.md), [client profiles](client-profiles.md), [manual messages](manual-messages.md)
+- [Availability](availability.md), [scheduling](scheduling.md), [reservation constraints](reservations.md)

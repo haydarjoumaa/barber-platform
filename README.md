@@ -1,5 +1,7 @@
 # Barber Platform
 
+> Latest implementation: client accounts/booking, staff invitations and permissions, in-shop receipts/reports, platform administration, local logos/client photos and PWA packaging have been added. Six migrations need applying. Verification was stopped at the user’s request; prior passing results do not cover this pass. Publication, rescheduling and routing decisions remain open. See [current status](docs/implementation.md) and [local operations](docs/local-operations.md).
+
 A local-first foundation for a multi-tenant barbershop booking platform. Product requirements live in [AGENTS.md](AGENTS.md). The project provides bilingual application layouts and a database foundation; owners can register clients, find available slots, save appointments and view saved bookings by date in the authenticated Business App.
 
 ## Requirements
@@ -93,3 +95,11 @@ The [persistent service catalog](docs/catalog.md) adds owner-only server operati
 The Business App has bilingual `/register`, `/login` and protected `/workspace` screens. Configure the database and app origin using [staff account setup](docs/staff-accounts.md). Shops remain unpublished and onboarding is pending. The account integration suite runs with `npm run test:database` in an isolated temporary schema, requiring schema-creation permission.
 
 Guest and quick-booking require the latest additive migration: run `npm run db:deploy`. Quick-booking creates a shop client profile and appointment atomically, without login credentials. Existing phone numbers must be selected through the existing-client option. Guest details are stored only on the appointment and shown in the saved calendar. `npm run test:booking-smoke` runs the focused integrity check; broader regression and browser checks are deferred during feature-focused development.
+
+Manual appointment messaging is available in the owner daily calendar. See [manual WhatsApp message usage and checks](docs/manual-messages.md).
+
+Owners can search client profiles and review paginated appointment history. See [client profile usage, authorization and verification](docs/client-profiles.md).
+
+Owners can edit their shop name and booking-link slug in the workspace. See [shop profile editing and checks](docs/shop-profile.md).
+
+New feature guides: [client access](docs/client-access.md), [staff team](docs/staff-team.md), [payments](docs/payments.md), [platform administration](docs/platform-administration.md).

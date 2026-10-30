@@ -1,6 +1,7 @@
 import type { StaffPrincipal } from "@barber/auth";
 import { bookingCandidates, findAvailableSlots, validateBookingPolicy, type AvailableBarber, type BookingPolicy } from "@barber/shared";
 import type { Prisma, PrismaClient } from "./generated/prisma/client";
+import { withStaffAccess } from "./staff-access";
 import { withShopOwner } from "./owner-transaction";
 import { loadBookingSchedule } from "./booking-schedule";
 
@@ -8,7 +9,7 @@ export class BookingPolicyMissingError extends Error {}
 export function createBookingAvailability(database: PrismaClient) {
   return {
     policy(principal: StaffPrincipal | null, shopId: string) {
-      return withShopOwner(database, principal, shopId, async tx => {
+      return withStaffAccess(database, principal, shopId, "appointments", async tx => {
         const policy = await tx.shopBookingPolicy.findUnique({ where: { barbershopId: shopId } });
         return policy ? validateBookingPolicy(policy as BookingPolicy) : null;
       });
@@ -23,15 +24,16 @@ export function createBookingAvailability(database: PrismaClient) {
     },
     /** Owner-only read. A result is never a reservation or an authorization to book. */
     search(principal: StaffPrincipal | null, shopId: string, input: { date: string; serviceIds: string[]; barberId?: string }, now = new Date()) {
-      return withShopOwner(database, principal, shopId, async (tx, shop) => {
-        return searchBookingAvailability(tx, shopId, shop, input, now);
+      return withStaffAccess(database, principal, shopId, "appointments", async (tx, shop, _actor, access) => {
+        if (access.barberId && input.barberId && input.barberId !== access.barberId) throw new Error("Forbidden");
+        return searchBookingAvailability(tx, shopId, shop, { ...input, ...(access.barberId ? { barberId: access.barberId } : {}) }, now);
       });
     },
   };
 }
 
 /** Internal transaction helper shared by availability reads and booking revalidation.
- * Call only after acquiring withShopOwner's shop lock; all owner configuration writes
+ * Call only after acquiring an authorized shop row lock (owner or published client access); all owner configuration writes
  * use that lock too, keeping catalog, policies and schedules stable until commit.
  */
 export async function searchBookingAvailability(tx: Prisma.TransactionClient, shopId: string,

@@ -1,4 +1,13 @@
 import "server-only";
+export { createMediaRepository } from "./media";
+export { createPlatformAdministration } from "./platform-admin";
+export { createStaffTeam } from "./staff-team";
+export { createShopDetails, type ShopDetailsInput } from "./shop-details";
+export { createClientBookings, type ClientSlotInput } from "./client-bookings";
+export { createClientAccounts } from "./client-accounts";
+export { createShopPayments } from "./payments";
+export { createShopProfiles, ShopProfileError, type ShopProfileInput } from "./shop-profile";
+export { createClientProfiles, CLIENT_HISTORY_PAGE_SIZE } from "./client-profiles";
 export { createOwnerBookings, SlotUnavailableError, CancellationDeadlineError, ClientPhoneExistsError, type OwnerBookingInput } from "./bookings";
 export { createBookingAvailability, BookingPolicyMissingError } from "./booking-availability";
 export { createBarberSchedules } from "./schedules";

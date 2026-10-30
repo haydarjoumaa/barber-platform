@@ -1,5 +1,16 @@
 const MAX_MINOR = 2_147_483_647;
 
+/** Format integer receipts and aggregates without floating-point rounding. */
+export function formatMoneyMinor(amount: bigint | string, currency: string, locale: string): string {
+  const minor = BigInt(amount);
+  if (minor < 0n) throw new Error("Invalid amount");
+  const precision = currencyPrecision(currency);
+  const scale = 10n ** BigInt(precision);
+  const fraction = precision ? new Intl.NumberFormat(locale, { useGrouping: false, minimumIntegerDigits: precision, maximumFractionDigits: 0 }).format(minor % scale) : "";
+  return new Intl.NumberFormat(locale, { style: "currency", currency }).formatToParts(minor / scale)
+    .map(part => part.type === "fraction" ? fraction : part.value).join("");
+}
+
 export function currencyPrecision(currency: string): number {
   if (!Intl.supportedValuesOf("currency").includes(currency)) throw new Error("Unsupported currency");
   return new Intl.NumberFormat("en", { style: "currency", currency }).resolvedOptions().maximumFractionDigits!;

@@ -1,0 +1,13 @@
+# Owner client profiles
+
+In the owner workspace, use **Client profiles** to search registered clients by name or international phone number. Open a profile to see contact details and appointment history. Registered-client appointments in the daily calendar also include a profile link. Guests remain appointment-only records; matching guest phone numbers are not merged into registered-client history.
+
+History includes every appointment status, including upcoming bookings, ordered by appointment start time descending with an ID tie-breaker. Each page contains up to 20 records. Out-of-range page numbers resolve to the last page. Each appointment shows its saved service names and total, barber, status and date/time in the shop timezone with UTC offset, plus a link to its calendar day. Totals describe booked services, not payment or revenue records. Legacy appointments without snapshots show the existing missing-history notice.
+
+Access requires a verified staff session and owner membership in the requested shop. The repository rechecks membership and shop activation in the database. Queries use both shop and client IDs; another shop's matching phone number does not grant access. Missing clients and unauthorized shop scopes return a not-found page. No passwords or password hashes are loaded. Owners can issue a one-time account setup/recovery code after explicitly verifying identity; see [client access](client-access.md). This is an owner workflow, not a client-facing dashboard.
+
+The original directory/history feature needs no additional migration. The newer [private photo gallery](media.md) requires the local-media migration and shared upload storage configuration. Use the existing migrated PostgreSQL development database. Run `npm test` for route access checks, and `node --env-file-if-exists=.env --import tsx --test tests/client-profiles.integration.ts` for database coverage of pagination, snapshot preservation, guest exclusion, cross-shop access, revoked membership and deactivated shops. The database suite also includes this test.
+
+Verification on October 30, 2026: the integration test could not connect to the configured development database at localhost:55440. Docker socket access was also denied. Database verification and browser checks with real client data remain pending until the local database is running.
+
+Owners can now manage consent-aware profile and haircut photos from the client profile. Clients can access and remove their own photos through their shop account. The latest media implementation has not been verified; earlier directory/history checks do not cover it.

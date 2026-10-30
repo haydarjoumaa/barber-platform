@@ -13,7 +13,6 @@ export default function Home() {
       <section className="link-callout"><span className="callout-icon"><Icon name="link" /></span><div><h2>{t("linkTitle")}</h2><p>{t("linkNote")}</p></div></section>
       <section className="booking-explainer" aria-labelledby="how-title"><div className="section-heading"><p className="eyebrow">{t("client")}</p><h2 id="how-title">{t("how")}</h2></div><div className="booking-steps">{steps.map(([title, note, icon], index) => <article className="booking-step" key={title}><div className="step-top"><span className="setup-icon"><Icon name={icon} /></span><span className="step-number">{new Intl.NumberFormat(locale, { minimumIntegerDigits: 2 }).format(index + 1)}</span></div><h3>{t(title)}</h3><p>{t(note)}</p></article>)}</div></section>
       <section className="faq" aria-labelledby="faq-title"><div><p className="eyebrow">{t("oneShop")}</p><h2 id="faq-title">{t("questions")}</h2></div><div>{([["accountQuestion", "accountAnswer"], ["paymentQuestion", "paymentAnswer"], ["passwordQuestion", "passwordAnswer"]] as const).map(([question, answer]) => <details key={question}><summary>{t(question)}<Icon name="plus" /></summary><p>{t(answer)}</p></details>)}</div></section>
-      <div className="preview-notice"><span className="status-dot" /><p><strong>{t("preview")}</strong><span>{t("clientPreview")}</span></p></div>
     </main><footer className="client-footer"><span>{t("brand")}</span><span>{t("footer")}</span></footer>
   </div>;
 }

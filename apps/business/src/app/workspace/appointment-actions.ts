@@ -9,6 +9,20 @@ import { scheduleField } from "./schedule-input";
 export interface AppointmentActionState { error?: MessageKey; success?: boolean; }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+export async function correctAppointmentOutcome(_state: AppointmentActionState, form: FormData): Promise<AppointmentActionState> {
+  try {
+    await requireAccountOrigin();
+    const principal = await accounts().authenticate(await staffToken());
+    if (!principal) return { error: "serviceSignIn" };
+    const shopId = scheduleField(form, "shopId"), appointmentId = scheduleField(form, "appointmentId");
+    const expectedStatus = scheduleField(form, "expectedStatus"), outcome = scheduleField(form, "outcome"), reason = scheduleField(form, "reason");
+    if (!uuid.test(shopId) || !uuid.test(appointmentId) || (expectedStatus !== "COMPLETED" && expectedStatus !== "NO_SHOW") || (outcome !== "COMPLETED" && outcome !== "NO_SHOW")) return { error: "bookingOutcomeFailed" };
+    await createOwnerBookings(getDatabase()).correctOutcome(principal, shopId, appointmentId, { expectedStatus, outcome, reason });
+    revalidatePath("/workspace", "layout");
+    return { success: true };
+  } catch { return { error: "bookingOutcomeFailed" }; }
+}
+
 export async function recordAppointmentOutcome(_state: AppointmentActionState, form: FormData): Promise<AppointmentActionState> {
   try {
     await requireAccountOrigin();

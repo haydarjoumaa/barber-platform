@@ -18,3 +18,7 @@ The active Business App root opens the authenticated owner workspace. Its saved 
 The shared calendar range helper resolves every date in the shop timezone; appointment times display an explicit UTC offset. Weeks begin Monday and month grids include surrounding dates. Records appear on every date overlapped by their occupied interval, including buffers. Cancelled records remain visible as history. Desktop displays seven date columns; tablet/mobile layouts reduce columns to keep names and times readable. Links expose focus indicators and the selected view uses `aria-current`. Both languages use the same persisted data and logical layout properties.
 
 Verification for this increment covers local date/range unit tests, real PostgreSQL range/tenant/RBAC tests, type checking and builds. Earlier browser verification above applies to the older screens; these new saved calendar views have not yet been browser-verified.
+
+## Appointment calendar filters
+
+The saved owner calendar supports client/guest name, phone and barber search, combined with a status selector. Submit the date/filter form to apply; clear the search and select All statuses to reset. Day, week, month and previous/next links retain the filters. Filters apply to each shop’s already authorized records and never search outside the selected calendar period. Search and status are stored in the page URL. An empty filtered day is not an availability indication. No migration is needed.
