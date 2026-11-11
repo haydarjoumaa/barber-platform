@@ -60,6 +60,8 @@ test("owner onboarding, publication and client booking work in both apps", async
   const details = page.locator("form").filter({ has: page.locator('[name="brandColor"]') });
   await details.locator('[name="phone"]').fill("+96170123456");
   await details.locator('[name="address"]').fill("Beirut test address");
+  await details.locator('[name="websiteUrl"]').fill("https://example.com/");
+  await details.locator('[name="instagramUrl"]').fill("https://www.instagram.com/browser_shop");
   await details.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(details.getByRole("status")).toBeVisible();
 
@@ -70,6 +72,19 @@ test("owner onboarding, publication and client booking work in both apps", async
   await logoForm.locator('[name="consent"]').check();
   await logoForm.getByRole("button", { name: "Upload image", exact: true }).click();
   await expect(logoForm.getByRole("status")).toBeVisible();
+  await page.locator("summary").filter({ hasText: "Shop photo gallery" }).click();
+  const galleryPanel = page.locator("details").filter({ has: page.locator('summary:text-is("Shop photo gallery")') });
+  const galleryForm = galleryPanel.locator("form").filter({ has: page.locator('[name="kind"][value="SHOP_GALLERY"]') });
+  for (const caption of ["Shop interior", "Work showcase"]) {
+    await galleryForm.locator('[name="caption"]').fill(caption);
+    await galleryForm.locator('[name="image"]').setInputFiles({ name: "gallery.png", mimeType: "image/png", buffer: image });
+    await galleryForm.locator('[name="consent"]').check();
+    await galleryForm.getByRole("button", { name: "Upload image", exact: true }).click();
+    await expect(galleryPanel.getByText(caption, { exact: true })).toBeVisible();
+  }
+  const galleryAssetId = (await galleryPanel.getByRole("img", { name: "Shop interior", exact: true }).getAttribute("src"))!.match(/media\/([^?]+)/)![1]!;
+  expect((await page.request.get(`http://localhost:3002/${slug}/gallery/${galleryAssetId}`)).status()).toBe(404);
+
 
   const service = page.locator("form").filter({ has: page.locator('[name="operation"][value="create"]') }).filter({ has: page.locator('[name="price"]') });
   await service.locator('[name="name"]').fill("Browser haircut");
@@ -114,6 +129,20 @@ test("owner onboarding, publication and client booking work in both apps", async
   const logo = await client.request.get(`http://localhost:3002/${slug}/logo`);
   expect(logo.status()).toBe(200);
   expect(logo.headers()["content-type"]).toContain("image/jpeg");
+  await client.goto(`http://localhost:3002/${slug}`);
+  await expect(client.getByRole("link", { name: "Website", exact: true })).toHaveAttribute("href", "https://example.com/");
+  await expect(client.getByRole("link", { name: "Instagram", exact: true })).toHaveAttribute("href", "https://www.instagram.com/browser_shop");
+  await expect(client.getByRole("img", { name: "Shop interior", exact: true })).toBeVisible();
+  const publicImage = await client.request.get(`http://localhost:3002/${slug}/gallery/${galleryAssetId}`);
+  expect(publicImage.status()).toBe(200);
+  expect(publicImage.headers()["cache-control"]).toBe("no-store");
+  await galleryPanel.getByRole("listitem").filter({ hasText: "Shop interior" }).getByRole("button", { name: "Remove image", exact: true }).click();
+  await expect(galleryPanel.getByText("Shop interior", { exact: true })).toHaveCount(0);
+  expect((await client.request.get(`http://localhost:3002/${slug}/gallery/${galleryAssetId}`)).status()).toBe(404);
+  await client.reload();
+  await expect(client.getByRole("img", { name: "Shop interior", exact: true })).toHaveCount(0);
+  await expect(client.getByRole("img", { name: "Work showcase", exact: true })).toBeVisible();
+
   await client.goto(`http://localhost:3002/${slug}/register`);
   await client.locator('[name="name"]').fill("Browser client");
   await client.locator('[name="phone"]').fill("+96170123457");
@@ -136,13 +165,29 @@ test("owner onboarding, publication and client booking work in both apps", async
   await page.getByRole("button", { name: "Record full payment", exact: true }).click();
   await page.getByRole("button", { name: "Confirm payment record", exact: true }).click();
   await expect(page.getByText("Paid in shop", { exact: true })).toBeVisible();
+  // Add a second eligible barber to exercise transfer controls in the real client form.
+  const transferDb = new Pool({ connectionString: process.env.DATABASE_URL });
+  const transferBarberId = randomUUID();
+  try {
+    const shopId = (await transferDb.query("SELECT id FROM barbershops WHERE slug = $1", [slug])).rows[0].id;
+    const transferUserId = randomUUID(), transferMembershipId = randomUUID();
+    await transferDb.query("INSERT INTO users (id, email) VALUES ($1, $2)", [transferUserId, `transfer-${suffix}@example.invalid`]);
+    await transferDb.query("INSERT INTO shop_memberships (id, barbershop_id, user_id, role) VALUES ($1, $2, $3, 'BARBER')", [transferMembershipId, shopId, transferUserId]);
+    await transferDb.query("INSERT INTO barbers (id, barbershop_id, membership_id, display_name) VALUES ($1, $2, $3, 'Transfer barber')", [transferBarberId, shopId, transferMembershipId]);
+    await transferDb.query("INSERT INTO barber_services (barbershop_id, barber_id, service_id) SELECT barbershop_id, $1, id FROM services WHERE barbershop_id = $2", [transferBarberId, shopId]);
+    await transferDb.query("INSERT INTO barber_schedule_periods (id, barbershop_id, barber_id, day_of_week, kind, start_minute, end_minute) VALUES ($1, $2, $3, $4, 'WORK', 540, 1080)", [randomUUID(), shopId, transferBarberId, day]);
+  } finally { await transferDb.end(); }
   await client.getByRole("button", { name: "Reschedule", exact: true }).click();
+  await client.getByRole("button", { name: "Find open times", exact: true }).click();
+  await client.locator('select[name="barberId"]').selectOption(transferBarberId);
+  await expect(client.locator('select[name="startsAt"]')).toHaveCount(0);
   await client.getByRole("button", { name: "Find open times", exact: true }).click();
   await client.locator('select[name="startsAt"]').selectOption({ index: 1 });
   await client.getByRole("button", { name: "Move appointment", exact: true }).click();
   await expect(client.locator('select[name="startsAt"]')).toHaveCount(0);
   await client.reload();
   await expect(client.getByText("Confirmed · Paid in shop", { exact: true })).toBeVisible();
+  await expect(client.getByText("Transfer barber", { exact: false }).first()).toBeVisible();
   await client.getByRole("button", { name: "Cancel appointment", exact: true }).click();
   await client.getByRole("button", { name: "Confirm cancellation", exact: true }).click();
   await expect(client.getByRole("button", { name: "Cancel appointment", exact: true })).toHaveCount(0);
@@ -171,7 +216,7 @@ test("owner onboarding, publication and client booking work in both apps", async
   await staff.locator("form").getByRole("button").click();
   await expect(staff).toHaveURL(/\/workspace/);
   await staff.goto(`http://localhost:3001/workspace?date=${date}`);
-  await expect(staff.getByRole("heading", { name: "Browser client · Browser barber", exact: true })).toBeVisible();
+  await expect(staff.getByRole("heading", { name: "Browser client · Transfer barber", exact: true })).toBeVisible();
   await expect(staff.getByRole("button", { name: "Publish booking page", exact: true })).toHaveCount(0);
   await expect(staff.getByRole("button", { name: "Record full payment", exact: true })).toHaveCount(0);
 

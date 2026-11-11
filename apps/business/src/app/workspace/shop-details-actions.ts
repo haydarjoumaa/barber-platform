@@ -13,7 +13,7 @@ export async function saveShopDetails(_state: ShopDetailsState, form: FormData):
     if (!principal) return { error: "serviceSignIn" };
     const shopId = scheduleField(form, "shopId");
     if (!/^[0-9a-f-]{36}$/i.test(shopId)) return { error: "shopDetailsFailed" };
-    const saved = await createShopDetails(getDatabase()).update(principal, shopId, { phone: scheduleField(form, "phone"), address: scheduleField(form, "address"), description: scheduleField(form, "description"), brandColor: scheduleField(form, "brandColor") }, scheduleField(form, "expectedUpdatedAt"));
+    const saved = await createShopDetails(getDatabase()).update(principal, shopId, { websiteUrl: scheduleField(form, "websiteUrl"), instagramUrl: scheduleField(form, "instagramUrl"), facebookUrl: scheduleField(form, "facebookUrl"), phone: scheduleField(form, "phone"), address: scheduleField(form, "address"), description: scheduleField(form, "description"), brandColor: scheduleField(form, "brandColor") }, scheduleField(form, "expectedUpdatedAt"));
     revalidatePath("/workspace", "layout");
     return { updatedAt: saved.updatedAt };
   } catch (error) { return { error: error instanceof Error && error.message === "Profile changed" ? "shopProfileStale" : "shopDetailsFailed" }; }

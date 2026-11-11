@@ -1,6 +1,15 @@
 import type { Locale } from "./index";
 
 const en = {
+  "mediaShopGallery": "Shop photo gallery",
+  "mediaGalleryNote": "These photos are public on your published booking page. Add photos of your shop and work that you have permission to publish.",
+  "mediaGalleryConsent": "I have permission to publish this photo and consent from every identifiable person shown.",
+  "mediaCaption": "Photo description (optional)",
+  "websiteUrl": "Website",
+  "instagramUrl": "Instagram",
+  "facebookUrl": "Facebook",
+  "shopLinks": "Shop links",
+  "shopLinksNote": "Use full HTTPS links. Instagram and Facebook links must use their respective websites. Leave a field blank to remove its link.",
   "mediaLogo": "Shop logo",
   "mediaPhotos": "Client photos",
   "mediaProfile": "Profile photo",
@@ -436,7 +445,8 @@ const en = {
   "oneShop": "A space just for your shop",
   "setupProgress": "Setup not started",
   "bookingReschedule": "Reschedule",
-  "bookingRescheduleNote": "Moves this appointment with the same barber. The saved services, prices, duration and buffer stay unchanged; only the time changes.",
+  "bookingRescheduleCurrentBarber": "Current barber",
+  "bookingRescheduleNote": "Find times to see eligible barbers, then select a barber and search again. Saved services, prices, duration and buffer stay unchanged.",
   "bookingRescheduleFind": "Find open times",
   "bookingRescheduleChoose": "Choose a new time",
   "bookingRescheduleNone": "No open times on this date. Try another date.",
@@ -500,6 +510,15 @@ const en = {
 
 export type MessageKey = keyof typeof en;
 const ar: Record<MessageKey, string> = {
+  "mediaShopGallery": "معرض صور المحل",
+  "mediaGalleryNote": "تظهر هذه الصور للعموم على صفحة الحجز المنشورة. أضف صوراً للمحل وأعمالك التي لديك إذن بنشرها.",
+  "mediaGalleryConsent": "لدي إذن بنشر هذه الصورة وموافقة كل شخص يمكن التعرف عليه فيها.",
+  "mediaCaption": "وصف الصورة (اختياري)",
+  "websiteUrl": "الموقع الإلكتروني",
+  "instagramUrl": "إنستغرام",
+  "facebookUrl": "فيسبوك",
+  "shopLinks": "روابط المحل",
+  "shopLinksNote": "استخدم روابط HTTPS كاملة. يجب أن تكون روابط إنستغرام وفيسبوك على مواقعهما. اترك الحقل فارغاً لإزالة الرابط.",
   "mediaLogo": "شعار الصالون",
   "mediaPhotos": "صور العميل",
   "mediaProfile": "صورة الملف الشخصي",
@@ -935,7 +954,8 @@ const ar: Record<MessageKey, string> = {
   "oneShop": "مساحة خاصة بصالونك",
   "setupProgress": "لم يبدأ الإعداد",
   "bookingReschedule": "تغيير الموعد",
-  "bookingRescheduleNote": "ينقل هذا الموعد مع الحلاق نفسه. تبقى الخدمات والأسعار والمدة وفترة الفصل المحفوظة كما هي؛ يتغيّر الوقت فقط.",
+  "bookingRescheduleCurrentBarber": "الحلاق الحالي",
+  "bookingRescheduleNote": "ابحث عن الأوقات لعرض الحلاقين المؤهلين، ثم اختر حلاقاً وابحث مجدداً. تبقى الخدمات والأسعار والمدة وفترة الفصل المحفوظة كما هي.",
   "bookingRescheduleFind": "البحث عن أوقات متاحة",
   "bookingRescheduleChoose": "اختر وقتاً جديداً",
   "bookingRescheduleNone": "لا توجد أوقات متاحة في هذا التاريخ. جرّب تاريخاً آخر.",

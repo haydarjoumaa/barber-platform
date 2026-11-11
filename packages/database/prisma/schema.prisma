@@ -23,6 +23,7 @@ enum AppointmentStatus {
 
 enum MediaKind {
   SHOP_LOGO
+  SHOP_GALLERY
   PROFILE
   HAIRCUT
 }
@@ -33,6 +34,9 @@ model Barbershop {
   phone       String? @db.VarChar(16)
   address     String? @db.VarChar(500)
   description String? @db.VarChar(2000)
+  websiteUrl String? @map("website_url") @db.VarChar(500)
+  instagramUrl String? @map("instagram_url") @db.VarChar(500)
+  facebookUrl String? @map("facebook_url") @db.VarChar(500)
   brandColor  String @default("#2563eb") @map("brand_color") @db.VarChar(7)
   slug        String   @unique
   timeZone    String   @default("Asia/Beirut") @map("time_zone")
@@ -216,6 +220,7 @@ model MediaAsset {
   barbershopId String @map("barbershop_id") @db.Uuid
   clientId String? @map("client_id") @db.Uuid
   uploadedByUserId String? @map("uploaded_by_user_id") @db.Uuid
+  caption String? @db.VarChar(200)
   kind MediaKind
   storageKey String @unique @map("storage_key") @db.VarChar(40)
   mimeType String @map("mime_type") @db.VarChar(32)

@@ -59,15 +59,17 @@ export async function rescheduleAppointment(state: RescheduleState, form: FormDa
     const principal = await accounts().authenticate(await staffToken());
     if (!principal) return { error: "serviceSignIn" };
     const shopId = scheduleField(form, "shopId"), appointmentId = scheduleField(form, "appointmentId"), date = scheduleField(form, "date");
+    const barberId = scheduleField(form, "barberId"), expectedBarberId = scheduleField(form, "expectedBarberId");
+    if (!uuid.test(barberId) || !uuid.test(expectedBarberId)) return { error: "bookingRescheduleFailed" };
     const operation = scheduleField(form, "operation"), override = scheduleField(form, "overrideDeadline");
     if (!uuid.test(shopId) || !uuid.test(appointmentId) || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !["search", "move"].includes(operation) || !["", "on"].includes(override)) return { ...state, error: "bookingRescheduleFailed" };
     const bookings = createOwnerBookings(getDatabase());
     if (operation === "search") {
-      const options = await bookings.rescheduleOptions(principal, shopId, appointmentId, date);
-      return { date, starts: options.starts, deadlinePassed: options.deadlinePassed };
+      const options = await bookings.rescheduleOptions(principal, shopId, appointmentId, date, barberId);
+      return { date, barberId, barbers: options.barbers, starts: options.starts, deadlinePassed: options.deadlinePassed };
     }
     const startsAt = Number(scheduleField(form, "startsAt"));
-    const moved = await bookings.reschedule(principal, shopId, appointmentId, { expectedStartsAt: scheduleField(form, "expectedStartsAt"), date, startsAt, overrideDeadline: override === "on" });
+    const moved = await bookings.reschedule(principal, shopId, appointmentId, { barberId, expectedBarberId, expectedStartsAt: scheduleField(form, "expectedStartsAt"), date, startsAt, overrideDeadline: override === "on" });
     revalidatePath("/workspace");
     return { success: true, startsAt: moved.after.startsAt };
   } catch (error) {

@@ -2,6 +2,8 @@ import type { MessageKey } from "./messages";
 
 /** Two-step reschedule form state shared by the staff and client apps. */
 export interface RescheduleState {
+  barberId?: string;
+  barbers?: { id: string; displayName: string }[];
   error?: MessageKey;
   success?: boolean;
   /** Shop-local date the open starts were found for. */

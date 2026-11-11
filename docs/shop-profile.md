@@ -9,3 +9,9 @@ The profile update and `shop.profile_updated` audit event commit together. The e
 No schema migration or new environment variables are required. Run `npm test` for action validation, authentication/origin checks and error handling. With the migrated local PostgreSQL database running, run `node --env-file-if-exists=.env --import tsx --test tests/shop-profile.integration.ts` for tenant isolation, database permission rechecks, stale-write races, duplicate slugs and audit rollback. It is also included in `npm run test:database`.
 
 Verification on October 30, 2026: typechecking, linting and action tests pass. The PostgreSQL integration test could not connect to the configured local database at 127.0.0.1:55440; database race/rollback verification and browser checks against real records remain pending.
+
+## Public links (November 11)
+
+Under **Contact details and appearance**, owners can edit website, Instagram and Facebook URLs alongside existing contact details, description and accent color. Links appear on the published client storefront and `/book` page in English/Arabic. Only HTTPS URLs without embedded credentials are accepted; social links must use the named platform's host. Blank fields remove links. The server checks live owner access, shop state and the expected profile version, and records an audit event. Links open in a separate tab with `noopener noreferrer`.
+
+Public photos are managed in **Shop photo gallery**; see [media](media.md). Advanced templates and configurable page sections remain deferred.

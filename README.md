@@ -54,7 +54,7 @@ The terminal asks for a hidden password and confirmation. If the email already b
 6. Complete the publication checklist and select **Publish booking page**.
 7. Share the client link. Clients can register with phone/password or book as guests. Staff can also register clients, book appointments, handle walk-ins and enable the queue.
 
-The workspace supports day/week/month calendars, confirmation, cancellation, rescheduling, completed/no-show outcomes, in-shop receipts and reports. Invite barbers or receptionists from **Team** and grant appointment/schedule permissions. Client accounts include upcoming/history views, profile editing, recovery through the owner and consent-controlled photos. Platform administration requires an explicit local operator grant; see its guide below.
+The workspace supports day/week/month calendars, confirmation, cancellation, rescheduling, completed/no-show outcomes, in-shop receipts and reports. Invite barbers or receptionists from **Team** and grant appointment/schedule permissions. Owners can publish a photo gallery and add website/Instagram/Facebook links under the shop profile controls. Client accounts include upcoming/history views, profile editing, recovery through the owner and consent-controlled photos. Platform administration requires an explicit local operator grant; see its guide below.
 
 ## Commands and verification
 

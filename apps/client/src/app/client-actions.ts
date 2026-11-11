@@ -87,11 +87,12 @@ export async function clientCancel(slug: string, _state: ClientActionState, form
 export async function clientReschedule(slug: string, state: RescheduleState, form: FormData): Promise<RescheduleState> {
   try {
     const { token } = await context(slug);
-    const appointmentId = field(form, "appointmentId"), date = field(form, "date");
+    const appointmentId = field(form, "appointmentId"), date = field(form, "date"), barberId = field(form, "barberId"), expectedBarberId = field(form, "expectedBarberId");
+    if (!/^[0-9a-f-]{36}$/i.test(barberId) || !/^[0-9a-f-]{36}$/i.test(expectedBarberId)) return { error: "bookingRescheduleFailed" };
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ...state, error: "bookingRescheduleFailed" };
     const bookings = createClientBookings(getDatabase());
-    if (field(form, "operation") === "search") return { date, starts: (await bookings.rescheduleOptions(slug, token, appointmentId, date)).starts };
-    const moved = await bookings.reschedule(slug, token, appointmentId, { expectedStartsAt: field(form, "expectedStartsAt"), date, startsAt: Number(field(form, "startsAt")) });
+    if (field(form, "operation") === "search") return { ...(await bookings.rescheduleOptions(slug, token, appointmentId, date, barberId)), barberId };
+    const moved = await bookings.reschedule(slug, token, appointmentId, { barberId, expectedBarberId, expectedStartsAt: field(form, "expectedStartsAt"), date, startsAt: Number(field(form, "startsAt")) });
     revalidatePath(`/${slug}/account`);
     return { success: true, startsAt: moved.after.startsAt };
   } catch (error) {

@@ -1,6 +1,6 @@
 # Implementation status
 
-The November 9 request to make the project runnable supersedes the earlier testing pause. Both applications now have matching local database configuration and run on ports 3001/3002. All 18 checked-in migrations are applied to this machine's existing PostgreSQL 16.15 database. PostgreSQL 17 Compose verification remains separate.
+The November 9 request to make the project runnable supersedes the earlier testing pause. Both applications now have matching local database configuration and run on ports 3001/3002. All 20 checked-in migrations are applied to this machine's existing PostgreSQL 16.15 database. PostgreSQL 17 Compose verification remains separate.
 
 ## November 10 backup and restore verification
 
@@ -76,7 +76,7 @@ Added owner controls to disable/restore non-owner app access for a single shop, 
 - Public guest/account booking, multi-service selection and any/specific barber availability. Owner and client writes reuse the same server-only availability and snapshot-persistence code; transaction and exclusion protections remain in place.
 - Separate platform-administrator role, explicit local operator bootstrap, paginated shop listing, audited suspension/reactivation and audited read-only support views. No automatic administrator grants.
 - English/Arabic controls for the implemented flows, shared account styling and RTL-aware layout. PWA manifests/icons and network-only offline-notice workers for the current separate-port setup; no account/appointment caching or offline writes.
-- Local shop logos and private client profile/haircut galleries, consent records, bounded image decoding/re-encoding, shared filesystem storage abstraction and operator cleanup command. Only published shop logos are public.
+- Local shop logos and private client profile/haircut galleries, consent records, bounded image decoding/re-encoding, shared filesystem storage abstraction and operator cleanup command. Published shop logos and explicitly uploaded shop-gallery images are public.
 - Local Compose/native backup and explicit restore scripts, plus an isolated database restore check verified on PostgreSQL 16.15. No backup schedule is installed.
 
 ## Previously pending migrations (now applied locally)
@@ -100,11 +100,25 @@ The configured database was restarted during the November 9 runnable-MVP pass. O
 - Walk-ins start now (or the next free minute), skip notice, never overlap; the queue is per shop, staff-only and switchable. Disabled barbers are hidden from new bookings.
 - Routing: keep separate ports (3001 business, 3002 client) for local development. The single-domain gateway is deferred until beta hosting is chosen.
 
+## November 11: rescheduling to another barber
+
+Staff and client rescheduling now allow eligible barber transfers while preserving saved services, prices, duration and buffer. Owners and authorized receptionists may transfer across the shop; barber-role staff remain limited to their own schedule. Transfers recheck service support, active membership, availability and stale barber/start values inside the existing transaction, with before/after barber audit records. No migration is required. See [rescheduling](rescheduling.md).
+
+Verification: lint, TypeScript checks, 298 unit tests plus backup safety tests, all 80 PostgreSQL tests and both production builds passed. The added concurrent transfer test passed. The extended Chromium scenario passed a client barber transfer, slot-list invalidation on selection changes, persistence after reload and the updated staff calendar.
+
+## November 11: public shop gallery and profile links
+
+Owners can upload and remove public gallery photos with explicit publishing consent and optional descriptions. Gallery lists are paginated, separate from logos and private client images, and visible only for active published shops. Public image routes enforce the same gates and deny removed, private or cross-shop assets. Website, Instagram and Facebook links are editable with owner authorization, stale-edit protection and HTTPS/host validation. English/Arabic forms and storefront rendering are included. Two additive migrations are applied locally (20 total).
+
+Verification: 298 unit tests plus backup safety tests, all 81 PostgreSQL tests, lint, TypeScript checks and both production builds passed. The extended gallery pagination test passed. Chromium verified two gallery uploads, unpublished-image denial, public rendering and social links, image withdrawal (404), and the existing booking/transfer/queue flows.
+
+Next requested increment: platform settings, feature flags and future plan controls.
+
 ## Still unfinished
 
-- Single-domain gateway/shared HTTP API deployment arrangement (deferred). Rescheduling to a different barber.
+- Single-domain gateway/shared HTTP API deployment arrangement (deferred).
 - Staff password recovery, full staff offboarding (including booking/schedule handling) and broader owner-assigned capabilities beyond appointment/schedule management.
-- Public shop photo galleries and editable phone/account identity changes.
+- Editable client phone/account identity changes.
 - Shop deletion with 30-day recovery/purge and retention policy handling.
 - Platform feature flags/settings and future plan controls; paid billing is deliberately not a launch prerequisite.
 - Private-beta verification, production hardening/deployment and actual backup scheduling, Compose restore and uploaded-file restore verification. These are not claimed complete.

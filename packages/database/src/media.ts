@@ -7,27 +7,27 @@ import { withShopOwner } from "./owner-transaction";
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PAGE_SIZE = 12;
 function subject(clientId: string | null, kind: MediaKind, consent: boolean) {
-  if (consent !== true || !["SHOP_LOGO", "PROFILE", "HAIRCUT"].includes(kind) ||
-    (kind === "SHOP_LOGO" ? clientId !== null : !clientId || !uuid.test(clientId))) throw new Error("Invalid image consent or subject");
+  if (consent !== true || !["SHOP_LOGO", "SHOP_GALLERY", "PROFILE", "HAIRCUT"].includes(kind) ||
+    (["SHOP_LOGO", "SHOP_GALLERY"].includes(kind) ? clientId !== null : !clientId || !uuid.test(clientId))) throw new Error("Invalid image consent or subject");
 }
 async function existingClient(tx: Prisma.TransactionClient, shopId: string, clientId: string | null) {
   if (clientId && !await tx.client.findUnique({ where: { barbershopId_id: { barbershopId: shopId, id: clientId } }, select: { id: true } })) throw new Error("Client unavailable");
 }
-async function list(tx: Prisma.TransactionClient, shopId: string, clientId: string | null, requestedPage: number) {
-  const where = { barbershopId: shopId, clientId, removedAt: null };
+async function list(tx: Prisma.TransactionClient, shopId: string, clientId: string | null, requestedPage: number, kind?: MediaKind) {
+  const where = { barbershopId: shopId, clientId, removedAt: null, ...(kind ? { kind } : {}) };
   const total = await tx.mediaAsset.count({ where }), pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const page = Math.min(Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1, pages);
   const rows = await tx.mediaAsset.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE,
-    select: { id: true, kind: true, width: true, height: true, createdAt: true, consentAt: true } });
+    select: { id: true, kind: true, caption: true, width: true, height: true, createdAt: true, consentAt: true } });
   return { page, pages, total, assets: rows.map(row => ({ ...row, createdAt: row.createdAt.toISOString(), consentAt: row.consentAt.toISOString() })) };
 }
 
 /** Metadata authorizes access; the object store has no public paths. */
 export function createMediaRepository(db: PrismaClient, storage: ObjectStorage = createLocalObjectStorage()) {
-  async function persist(tx: Prisma.TransactionClient, shopId: string, clientId: string | null, kind: MediaKind, image: StoredImage, actorUserId: string | null) {
-    const retired = kind === "HAIRCUT" ? [] : await tx.mediaAsset.findMany({ where: { barbershopId: shopId, clientId, kind, removedAt: null }, select: { id: true, storageKey: true } });
+  async function persist(tx: Prisma.TransactionClient, shopId: string, clientId: string | null, kind: MediaKind, image: StoredImage, actorUserId: string | null, caption = "") {
+    const retired = (kind === "HAIRCUT" || kind === "SHOP_GALLERY") ? [] : await tx.mediaAsset.findMany({ where: { barbershopId: shopId, clientId, kind, removedAt: null }, select: { id: true, storageKey: true } });
     if (retired.length) await tx.mediaAsset.updateMany({ where: { barbershopId: shopId, id: { in: retired.map(row => row.id) }, removedAt: null }, data: { removedAt: new Date() } });
-    const asset = await tx.mediaAsset.create({ data: { barbershopId: shopId, clientId, kind, ...image, uploadedByUserId: actorUserId, consentAt: new Date(), consentSource: actorUserId ? "OWNER" : "CLIENT" } });
+    const asset = await tx.mediaAsset.create({ data: { barbershopId: shopId, clientId, kind, caption: caption || null, ...image, uploadedByUserId: actorUserId, consentAt: new Date(), consentSource: actorUserId ? "OWNER" : "CLIENT" } });
     const details = { assetId: asset.id, clientId, kind, consentRecorded: true, replacedAssetIds: retired.map(row => row.id) };
     if (actorUserId) await tx.auditEvent.create({ data: { barbershopId: shopId, actorUserId, event: "media.uploaded", details } });
     else await tx.clientEvent.create({ data: { barbershopId: shopId, clientId, event: "media.uploaded", details } });
@@ -46,7 +46,7 @@ export function createMediaRepository(db: PrismaClient, storage: ObjectStorage =
     const asset = await tx.mediaAsset.findFirst({ where: { id, barbershopId: shopId, clientId, removedAt: null }, select: { id: true, storageKey: true, kind: true } });
     if (!asset) throw new Error("Photo unavailable");
     await tx.mediaAsset.update({ where: { barbershopId_id: { barbershopId: shopId, id } }, data: { removedAt: new Date() } });
-    const details = { assetId: id, clientId, kind: asset.kind, consentWithdrawn: asset.kind !== "SHOP_LOGO" };
+    const details = { assetId: id, clientId, kind: asset.kind, consentWithdrawn: true };
     if (actorUserId) await tx.auditEvent.create({ data: { barbershopId: shopId, actorUserId, event: "media.removed", details } });
     else await tx.clientEvent.create({ data: { barbershopId: shopId, clientId, event: "media.removed", details } });
     return asset;
@@ -58,16 +58,17 @@ export function createMediaRepository(db: PrismaClient, storage: ObjectStorage =
     return storage.read(asset.storageKey);
   }
   return {
-    ownerList(principal: StaffPrincipal | null, shopId: string, clientId: string | null, page = 1) {
-      return withShopOwner(db, principal, shopId, async tx => { await existingClient(tx, shopId, clientId); return list(tx, shopId, clientId, page); });
+    ownerList(principal: StaffPrincipal | null, shopId: string, clientId: string | null, page = 1, kind?: MediaKind) {
+      return withShopOwner(db, principal, shopId, async tx => { await existingClient(tx, shopId, clientId); return list(tx, shopId, clientId, page, kind ?? (clientId === null ? "SHOP_LOGO" : undefined)); });
     },
-    async ownerUpload(principal: StaffPrincipal | null, shopId: string, clientId: string | null, kind: MediaKind, upload: ImageUpload, consent: boolean) {
+    async ownerUpload(principal: StaffPrincipal | null, shopId: string, clientId: string | null, kind: MediaKind, upload: ImageUpload, consent: boolean, caption = "") {
+      if (typeof caption !== "string" || caption.trim().length > 200) throw new Error("Invalid caption");
       subject(clientId, kind, consent);
       await withShopOwner(db, principal, shopId, tx => existingClient(tx, shopId, clientId));
       await throttleClient(db, shopId, "media", `owner:${principal!.userId}`, 20);
       const image = await storeImage(storage, upload);
       // A failed/ambiguous DB commit leaves a private unreferenced object for delayed cleanup.
-      const result = await withShopOwner(db, principal, shopId, async (tx, _shop, actor) => { await existingClient(tx, shopId, clientId); return persist(tx, shopId, clientId, kind, image, actor); });
+      const result = await withShopOwner(db, principal, shopId, async (tx, _shop, actor) => { await existingClient(tx, shopId, clientId); return persist(tx, shopId, clientId, kind, image, actor, kind === "SHOP_GALLERY" ? caption.trim() : ""); });
       await purge(result.retired);
       return { id: result.id };
     },
@@ -113,6 +114,17 @@ export function createMediaRepository(db: PrismaClient, storage: ObjectStorage =
         const client = await clientIdentity(tx, shop.id, token);
         if (!client) throw new Error("Sign in required");
         return read(tx, shop.id, id, client.id);
+      });
+    },
+    publicGallery(slug: string, page = 1) {
+      return withPublishedShop(db, slug, (tx, shop) => list(tx, shop.id, null, page, "SHOP_GALLERY"));
+    },
+    publicGalleryImage(slug: string, id: string) {
+      return withPublishedShop(db, slug, async (tx, shop) => {
+        if (!uuid.test(id)) throw new Error("Invalid photo");
+        const asset = await tx.mediaAsset.findFirst({ where: { id, barbershopId: shop.id, clientId: null, kind: "SHOP_GALLERY", removedAt: null }, select: { storageKey: true } });
+        if (!asset) throw new Error("Photo unavailable");
+        return storage.read(asset.storageKey);
       });
     },
     publicLogo(slug: string) {

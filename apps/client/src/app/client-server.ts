@@ -20,5 +20,5 @@ export async function setClientCookie(session: { shopId: string; token: string; 
 }
 export async function clientShop(slug: string) {
   if (!isValidShopSlug(slug)) return null;
-  return getDatabase().barbershop.findFirst({ where: { slug, publishedAt: { not: null }, deletedAt: null, suspendedAt: null }, select: { id: true, name: true, slug: true, timeZone: true, phone: true, address: true, description: true, brandColor: true, mediaAssets: { where: { kind: "SHOP_LOGO", removedAt: null }, take: 1, select: { id: true } } } });
+  return getDatabase().barbershop.findFirst({ where: { slug, publishedAt: { not: null }, deletedAt: null, suspendedAt: null }, select: { id: true, name: true, slug: true, timeZone: true, phone: true, address: true, description: true, websiteUrl: true, instagramUrl: true, facebookUrl: true, brandColor: true, mediaAssets: { where: { kind: "SHOP_LOGO", removedAt: null }, take: 1, select: { id: true } } } });
 }

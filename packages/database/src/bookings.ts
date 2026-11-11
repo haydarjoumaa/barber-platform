@@ -3,7 +3,7 @@ import { calendarRange, type CalendarView } from "@barber/shared";
 import type { Prisma, PrismaClient } from "./generated/prisma/client";
 import { searchBookingAvailability } from "./booking-availability";
 import { writeBooking } from "./booking-write";
-import { moveAppointment, rescheduleStarts, reschedulingDeadlinePassed, reschedulingPolicy, ReschedulingDeadlineError } from "./booking-reschedule";
+import { moveAppointment, rescheduleBarbers, rescheduleStarts, reschedulingDeadlinePassed, reschedulingPolicy, ReschedulingDeadlineError } from "./booking-reschedule";
 import { withStaffAccess, type StaffAccess } from "./staff-access";
 import { withShopOwner } from "./owner-transaction";
 
@@ -91,7 +91,7 @@ export function createOwnerBookings(database: PrismaClient, clock: () => Date = 
       const appointments = await tx.appointment.findMany({
         where: { barbershopId: shopId, ...(access.barberId ? { barberId: access.barberId } : {}), startsAt: { lt: new Date(range.end) }, occupiedUntil: { gt: new Date(range.start) } },
         orderBy: [{ startsAt: "asc" }, { id: "asc" }],
-        select: { id: true, startsAt: true, serviceEndsAt: true, occupiedUntil: true, status: true, walkIn: true, guestName: true, guestPhone: true,
+        select: { id: true, barberId: true, startsAt: true, serviceEndsAt: true, occupiedUntil: true, status: true, walkIn: true, guestName: true, guestPhone: true,
           client: { select: { id: true, name: true, phone: true } }, barber: { select: { displayName: true } },
           payments: { where: { voidedAt: null }, select: { id: true, amountMinor: true, currency: true, createdAt: true } },
           services: { orderBy: { position: "asc" }, select: { name: true, priceMinor: true, currency: true } } },
@@ -159,29 +159,31 @@ export function createOwnerBookings(database: PrismaClient, clock: () => Date = 
       });
     },
     /** Open starts for moving an appointment on one shop-local date; read-only, never a reservation. */
-    rescheduleOptions(principal: StaffPrincipal | null, shopId: string, appointmentId: string, date: string) {
+    rescheduleOptions(principal: StaffPrincipal | null, shopId: string, appointmentId: string, date: string, barberId?: string) {
       return withBookings(principal, shopId, async (tx, shop, _actor, access) => {
         const appointment = await movable(tx, shopId, appointmentId, access);
+        if (barberId && access.barberId && barberId !== access.barberId) throw new Error("Forbidden");
         const policy = await reschedulingPolicy(tx, shopId);
         const now = clock();
-        return { date, timeZone: shop.time_zone, deadlinePassed: reschedulingDeadlinePassed(appointment, policy, now),
-          starts: await rescheduleStarts(tx, shopId, shop.time_zone, appointment, policy, date, now) };
+        return { barbers: await rescheduleBarbers(tx, shopId, appointment, access.barberId), date, timeZone: shop.time_zone, deadlinePassed: reschedulingDeadlinePassed(appointment, policy, now),
+          starts: await rescheduleStarts(tx, shopId, shop.time_zone, appointment, policy, date, now, barberId) };
       });
     },
     async reschedule(principal: StaffPrincipal | null, shopId: string, appointmentId: string,
-      input: { expectedStartsAt: string; date: string; startsAt: number; overrideDeadline: boolean }) {
+      input: { expectedBarberId?: string; barberId?: string; expectedStartsAt: string; date: string; startsAt: number; overrideDeadline: boolean }) {
       try {
         return await withBookings(principal, shopId, async (tx, shop, actorUserId, access) => {
+          if (input.barberId && access.barberId && input.barberId !== access.barberId) throw new Error("Forbidden");
           if (typeof input.overrideDeadline !== "boolean") throw new Error("Invalid reschedule");
           if (input.overrideDeadline && !access.owner) throw new Error("Forbidden");
           const appointment = await movable(tx, shopId, appointmentId, access);
-          if (appointment.startsAt.toISOString() !== input.expectedStartsAt) throw new Error("Appointment changed");
+          if ((input.barberId !== undefined && appointment.barberId !== input.expectedBarberId) || appointment.startsAt.toISOString() !== input.expectedStartsAt) throw new Error("Appointment changed");
           const policy = await reschedulingPolicy(tx, shopId);
           const checkedAt = clock();
           const deadlinePassed = reschedulingDeadlinePassed(appointment, policy, checkedAt);
           if (deadlinePassed && !input.overrideDeadline) throw new ReschedulingDeadlineError();
           // Staff moves keep the current approval status.
-          const moved = await moveAppointment(tx, shopId, shop.time_zone, appointment, policy, { date: input.date, startsAt: input.startsAt, status: appointment.status as "PENDING" | "CONFIRMED" }, checkedAt);
+          const moved = await moveAppointment(tx, shopId, shop.time_zone, appointment, policy, { ...(input.barberId ? { barberId: input.barberId } : {}), date: input.date, startsAt: input.startsAt, status: appointment.status as "PENDING" | "CONFIRMED" }, checkedAt);
           if (!moved) throw new SlotUnavailableError();
           await tx.auditEvent.create({ data: { barbershopId: shopId, actorUserId, event: "booking.rescheduled",
             details: { appointmentId, ...moved, reschedulingNoticeMinutes: policy.reschedulingNoticeMinutes, checkedAt: checkedAt.toISOString(), deadlineOverridden: deadlinePassed && input.overrideDeadline } } });

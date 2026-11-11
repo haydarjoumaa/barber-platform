@@ -12,7 +12,7 @@ npm run db:generate
 npm run dev
 ```
 
-All 18 migrations are applied to this machine’s PostgreSQL 16.15 database as of November 10. Verification has resumed. `npm run setup` creates missing app environment files from the root configuration and preserves existing files. On this machine, restart the existing database with `bash .local/start-database.sh`; Docker is not required for that installation. Use the `--local` backup option below for that installation; Docker is not needed.
+All 20 migrations are applied to this machine’s PostgreSQL 16.15 database as of November 11. Verification has resumed. `npm run setup` creates missing app environment files from the root configuration and preserves existing files. On this machine, restart the existing database with `bash .local/start-database.sh`; Docker is not required for that installation. Use the `--local` backup option below for that installation; Docker is not needed.
 
 ## Backups
 

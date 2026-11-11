@@ -18,8 +18,8 @@ export async function saveOwnerMedia(shopId: string, clientId: string | null, _s
     const media = createMediaRepository(getDatabase()), operation = scheduleField(form, "operation");
     if (operation === "upload") {
       const kind = scheduleField(form, "kind"), image = form.get("image");
-      if ((kind !== "SHOP_LOGO" && kind !== "PROFILE" && kind !== "HAIRCUT") || !(image instanceof File) || !image.size || image.size > MAX_IMAGE_BYTES || scheduleField(form, "consent") !== "on") return { error: "mediaInvalid" };
-      await media.ownerUpload(principal, shopId, clientId, kind, { bytes: new Uint8Array(await image.arrayBuffer()), contentType: image.type }, true);
+      if ((kind !== "SHOP_LOGO" && kind !== "SHOP_GALLERY" && kind !== "PROFILE" && kind !== "HAIRCUT") || !(image instanceof File) || !image.size || image.size > MAX_IMAGE_BYTES || scheduleField(form, "consent") !== "on") return { error: "mediaInvalid" };
+      await media.ownerUpload(principal, shopId, clientId, kind, { bytes: new Uint8Array(await image.arrayBuffer()), contentType: image.type }, true, scheduleField(form, "caption"));
     } else if (operation === "remove") await media.ownerRemove(principal, shopId, clientId, scheduleField(form, "assetId"));
     else return { error: "mediaFailed" };
     revalidatePath("/workspace", "layout");
