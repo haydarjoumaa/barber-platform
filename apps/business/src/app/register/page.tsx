@@ -1,2 +1,2 @@
-import { AccountForm } from "../account-form";
-export default function RegisterPage() { return <AccountForm mode="register" currencies={Intl.supportedValuesOf("currency")} />; }
+import { redirect } from "next/navigation";
+export default function RegisterPage() { redirect("/login"); }

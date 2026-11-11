@@ -6,5 +6,5 @@ export default defineConfig([
   ...nextVitals,
   ...nextTs,
   { settings: { next: { rootDir: ["apps/business", "apps/client"] } } },
-  globalIgnores(["**/.next/**", "**/next-env.d.ts", "**/generated/**", "coverage/**"]),
+  globalIgnores(["**/.next/**", "**/next-env.d.ts", "**/generated/**", "coverage/**", "test-results/**", "playwright-report/**", ".local/**"]),
 ]);

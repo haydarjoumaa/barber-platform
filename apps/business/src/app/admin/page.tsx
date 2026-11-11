@@ -5,6 +5,8 @@ import { createPlatformAdministration, getDatabase } from "@barber/database";
 import { LOCALE_COOKIE, messages, resolveLocale } from "@barber/shared";
 import { LanguageSwitcher } from "@barber/ui";
 import { accounts, staffToken } from "../account-server";
+import { AccountForm } from "../account-form";
+import { signOut } from "../account-actions";
 import { SuspensionForm } from "./suspension-form";
 
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
@@ -16,8 +18,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     throw error;
   });
   const t = messages[resolveLocale((await cookies()).get(LOCALE_COOKIE)?.value)];
-  return <main className="account-shell"><header className="account-header-actions"><Link href="/workspace">{t.clientBack}</Link><LanguageSwitcher /></header><section className="setup-panel"><h1>{t.adminTitle}</h1><p>{t.adminShops}: {result.total}</p>
-    <ul className="managed-services">{result.shops.map(shop => <li key={shop.id}><h2><Link href={`/admin/shops/${shop.id}`}>{shop.name}</Link></h2><p><bdi>/{shop.slug}</bdi></p><p>{shop.deletedAt ? t.adminDeactivated : shop.suspendedAt ? t.adminSuspended : shop.publishedAt ? t.adminPublished : t.notPublished}</p>{!shop.deletedAt && <SuspensionForm key={`${shop.id}-${Boolean(shop.suspendedAt)}`} shopId={shop.id} suspended={Boolean(shop.suspendedAt)} />}</li>)}</ul>
+  return <main className="account-shell"><header className="account-header-actions"><LanguageSwitcher /><form action={signOut}><button className="secondary-button">{t.authSignOut}</button></form></header><section className="setup-panel"><h1>{t.adminTitle}</h1><p>{t.adminShops}: {result.total}</p><AccountForm mode="create" currencies={Intl.supportedValuesOf("currency")} />
+    <ul className="managed-services">{result.shops.map(shop => <li key={shop.id}><h2><Link href={`/admin/shops/${shop.id}`}>{shop.name}</Link></h2><p><Link href={`/${shop.slug}/login`}>{t.adminStaffLink}: /{shop.slug}/login</Link></p>{process.env.CLIENT_ORIGIN && <p><a href={`${process.env.CLIENT_ORIGIN.replace(/\/$/, "")}/${shop.slug}`} target="_blank" rel="noreferrer">{t.adminClientLink}: /{shop.slug}</a></p>}<p>{shop.deletedAt ? t.adminDeactivated : shop.suspendedAt ? t.adminSuspended : shop.publishedAt ? t.adminPublished : t.notPublished}</p>{!shop.deletedAt && <SuspensionForm key={`${shop.id}-${Boolean(shop.suspendedAt)}`} shopId={shop.id} suspended={Boolean(shop.suspendedAt)} />}</li>)}</ul>
     <nav className="account-header-actions">{result.page > 1 && <Link href={`?page=${result.page - 1}`}>{t.clientPreviousPage}</Link>}<span>{result.page} / {result.pages}</span>{result.page < result.pages && <Link href={`?page=${result.page + 1}`}>{t.clientNextPage}</Link>}</nav>
   </section></main>;
 }

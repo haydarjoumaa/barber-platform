@@ -38,6 +38,7 @@ model Barbershop {
   timeZone    String   @default("Asia/Beirut") @map("time_zone")
   currency    String?  @db.VarChar(3)
   publishedAt DateTime? @map("published_at") @db.Timestamptz(3)
+  walkInQueueEnabled Boolean @default(false) @map("walk_in_queue_enabled")
   deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(3)
   suspendedAt DateTime? @map("suspended_at") @db.Timestamptz(3)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -55,6 +56,8 @@ model Barbershop {
   clientEvents ClientEvent[]
   staffInvites StaffInvite[]
   mediaAssets MediaAsset[]
+  walkInQueue WalkInQueueEntry[]
+  staffSessions StaffSession[]
 
   @@unique([id, currency])
 
@@ -98,6 +101,8 @@ model PlatformAuditEvent {
 }
 
 model StaffSession {
+  shopId String? @map("barbershop_id") @db.Uuid
+  shop Barbershop? @relation(fields: [shopId], references: [id], onDelete: Restrict)
   tokenHash String @id @map("token_hash") @db.VarChar(64)
   userId String @map("user_id") @db.Uuid
   expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
@@ -105,6 +110,7 @@ model StaffSession {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId])
+  @@index([shopId], map: "staff_sessions_barbershop_id_idx")
   @@index([expiresAt])
   @@map("staff_sessions")
 }
@@ -135,6 +141,7 @@ model ShopMembership {
   role         StaffRole
   manageAppointments Boolean @default(false) @map("manage_appointments")
   manageSchedules Boolean @default(false) @map("manage_schedules")
+  accessDisabledAt DateTime? @map("access_disabled_at") @db.Timestamptz(3)
   barbershop   Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Restrict)
   user         User @relation(fields: [userId], references: [id], onDelete: Restrict)
   barber       Barber?
@@ -174,6 +181,7 @@ model Barber {
   schedulePeriods BarberSchedulePeriod[]
   timeOff BarberTimeOff[]
   scheduleOverrides BarberScheduleOverride[]
+  queueEntries WalkInQueueEntry[]
 
   @@unique([barbershopId, membershipId])
   @@unique([barbershopId, id])
@@ -196,6 +204,7 @@ model Client {
   resetTokens ClientResetToken[]
   events ClientEvent[]
   photos MediaAsset[]
+  queueEntries WalkInQueueEntry[]
 
   @@unique([barbershopId, phone])
   @@unique([barbershopId, id])
@@ -289,6 +298,7 @@ model Appointment {
   startsAt      DateTime @map("starts_at") @db.Timestamptz(3)
   serviceEndsAt DateTime @map("service_ends_at") @db.Timestamptz(3)
   occupiedUntil DateTime @map("occupied_until") @db.Timestamptz(3)
+  walkIn        Boolean @default(false) @map("walk_in")
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
   barbershop    Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Restrict)
@@ -296,6 +306,7 @@ model Appointment {
   client        Client? @relation(fields: [barbershopId, clientId], references: [barbershopId, id], onDelete: Restrict)
   services      AppointmentService[]
   payments      Payment[]
+  queueEntry    WalkInQueueEntry?
 
   @@unique([barbershopId, id])
   @@index([barbershopId, startsAt])
@@ -452,4 +463,33 @@ model ShopBookingPolicy {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
   barbershop Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Restrict)
   @@map("shop_booking_policies")
+}
+
+enum WalkInQueueStatus {
+  WAITING
+  SERVED
+  REMOVED
+}
+
+/** Staff-managed shop waiting line. Serving an entry creates a walk-in appointment. */
+model WalkInQueueEntry {
+  id String @id @default(uuid()) @db.Uuid
+  barbershopId String @map("barbershop_id") @db.Uuid
+  clientId String? @map("client_id") @db.Uuid
+  guestName String? @map("guest_name") @db.VarChar(100)
+  guestPhone String? @map("guest_phone") @db.VarChar(16)
+  preferredBarberId String? @map("preferred_barber_id") @db.Uuid
+  serviceIds String[] @map("service_ids") @db.Uuid
+  status WalkInQueueStatus @default(WAITING)
+  appointmentId String? @map("appointment_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  resolvedAt DateTime? @map("resolved_at") @db.Timestamptz(3)
+  barbershop Barbershop @relation(fields: [barbershopId], references: [id], onDelete: Restrict)
+  client Client? @relation(fields: [barbershopId, clientId], references: [barbershopId, id], onDelete: Restrict)
+  preferredBarber Barber? @relation(fields: [barbershopId, preferredBarberId], references: [barbershopId, id], onDelete: Restrict)
+  appointment Appointment? @relation(fields: [barbershopId, appointmentId], references: [barbershopId, id], onDelete: Restrict)
+  @@unique([barbershopId, id])
+  @@unique([barbershopId, appointmentId])
+  @@index([barbershopId, status, createdAt])
+  @@map("walkin_queue")
 }

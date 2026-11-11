@@ -1,9 +1,12 @@
 export const DEFAULT_TIME_ZONE = "Asia/Beirut";
 export type { MediaActionState, MediaPurpose, MediaPreview } from "./media";
+export type { RescheduleState } from "./reschedule";
+export { walkInStarts } from "./walk-in";
 export { offlineWorker } from "./offline-worker";
 export { appointmentMessage, whatsappLink, type AppointmentMessageInput } from "./appointment-message";
 export { bookingCandidates, availabilityDates, validateBookingPolicy, MAX_BOOKING_HORIZON_DAYS, type BookingPolicy } from "./booking-policy";
 export { validateSchedulePeriod, weeklyFromPeriods, overrideFromPeriods, scheduleClock, type SchedulePeriodInput } from "./schedule-periods";
+export { publicationGaps, PUBLICATION_REQUIREMENTS, type PublicationRequirement, type PublicationSnapshot } from "./publication";
 export { currencyPrecision, parsePriceMinor, priceInputValue, formatMoneyMinor } from "./money";
 export { calendarDates, calendarRange, shiftCalendarDate, shopCalendarDate, type CalendarView } from "./calendar";
 export type StaffRole = "OWNER" | "BARBER" | "RECEPTIONIST";
@@ -13,7 +16,7 @@ export const localeDirection = (locale: Locale) => locale === "ar" ? "rtl" : "lt
 // Keep this list aligned with the gateway routing proposal before enabling storefronts.
 export const RESERVED_SHOP_SLUGS = new Set([
   "business", "business-assets", "admin", "api", "auth", "login", "logout", "register", "setup",
-  "account", "health", "assets", "static", "public", "support", "www",
+  "workspace", "join", "account", "health", "assets", "static", "public", "support", "www",
 ]);
 export function isValidShopSlug(slug: string): boolean {
   return slug.length >= 3 && slug.length <= 63 &&

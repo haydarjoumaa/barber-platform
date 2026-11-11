@@ -35,10 +35,12 @@ export function createBookingAvailability(database: PrismaClient) {
 /** Internal transaction helper shared by availability reads and booking revalidation.
  * Call only after acquiring an authorized shop row lock (owner or published client access); all owner configuration writes
  * use that lock too, keeping catalog, policies and schedules stable until commit.
+ * `candidateStarts` replaces the policy grid (interval, minimum notice, horizon); only staff walk-ins supply it.
+ * Barbers whose shop access is disabled are never offered for new bookings.
  */
 export async function searchBookingAvailability(tx: Prisma.TransactionClient, shopId: string,
   shop: { currency: string | null; time_zone: string },
-  input: { date: string; serviceIds: string[]; barberId?: string }, now: Date) {
+  input: { date: string; serviceIds: string[]; barberId?: string }, now: Date, candidateStarts?: number[]) {
   const stored = await tx.shopBookingPolicy.findUnique({ where: { barbershopId: shopId } });
   if (!stored) throw new BookingPolicyMissingError("Configure booking policies first");
   const policy = validateBookingPolicy(stored as BookingPolicy);
@@ -46,12 +48,12 @@ export async function searchBookingAvailability(tx: Prisma.TransactionClient, sh
   if (!input.serviceIds.length || new Set(input.serviceIds).size !== input.serviceIds.length) throw new Error("Select unique services");
   const services = await tx.service.findMany({ where: { barbershopId: shopId, id: { in: input.serviceIds }, archivedAt: null } });
   if (services.length !== input.serviceIds.length) throw new Error("Service not found");
-  const records = await tx.barber.findMany({ where: { barbershopId: shopId, ...(input.barberId ? { id: input.barberId } : {}) }, select: {
+  const records = await tx.barber.findMany({ where: { barbershopId: shopId, membership: { accessDisabledAt: null }, ...(input.barberId ? { id: input.barberId } : {}) }, select: {
     id: true, barbershopId: true, displayName: true,
     services: { where: { serviceId: { in: input.serviceIds }, service: { archivedAt: null } }, select: { serviceId: true, durationMinutes: true, priceMinor: true } },
   } });
   if (input.barberId && !records.length) throw new Error("Barber not found");
-  const candidates = bookingCandidates(input.date, shop.time_zone, policy, now.getTime());
+  const candidates = candidateStarts ?? bookingCandidates(input.date, shop.time_zone, policy, now.getTime());
   const barbers: AvailableBarber[] = [];
   const closures: { start: number; end: number }[] = [];
   for (const barber of candidates.length ? records : []) {

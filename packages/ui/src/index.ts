@@ -5,3 +5,4 @@ export { Icon, type IconName } from "./icon";
 
 export { PwaRegistration } from "./pwa-registration";
 export { MediaManager } from "./media-manager";
+export { RescheduleForm } from "./reschedule-form";

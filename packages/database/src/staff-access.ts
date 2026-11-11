@@ -9,7 +9,7 @@ export async function withStaffAccess<T>(db: PrismaClient, principal: StaffPrinc
     const [record] = await tx.$queryRaw<{ currency: string | null; time_zone: string; role: string; membership_id: string; manage_appointments: boolean; manage_schedules: boolean }[]>`
       SELECT s.currency, s.time_zone, m.role, m.id AS membership_id, m.manage_appointments, m.manage_schedules
       FROM barbershops s JOIN shop_memberships m ON m.barbershop_id = s.id
-      WHERE s.id = ${shopId}::uuid AND m.user_id = ${principal.userId}::uuid AND s.deleted_at IS NULL AND s.suspended_at IS NULL FOR UPDATE OF s, m`;
+      WHERE s.id = ${shopId}::uuid AND m.user_id = ${principal.userId}::uuid AND m.access_disabled_at IS NULL AND s.deleted_at IS NULL AND s.suspended_at IS NULL FOR UPDATE OF s, m`;
     if (!record) throw new Error("Forbidden");
     if (record.role === "OWNER") return operation(tx, record, principal.userId, { owner: true, barberId: null });
     if (!(permission === "appointments" ? record.manage_appointments : record.manage_schedules)) throw new Error("Forbidden");

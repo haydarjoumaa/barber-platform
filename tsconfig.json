@@ -3,6 +3,8 @@
   "include": [
     "prisma.config.ts",
     "vitest.config.ts",
-    "tests/**/*.ts"
+    "playwright.config.ts",
+    "tests/**/*.ts",
+    "scripts/**/*.ts"
   ]
 }

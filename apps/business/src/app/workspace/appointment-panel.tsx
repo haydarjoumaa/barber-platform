@@ -1,6 +1,8 @@
 import { createOwnerBookings, getDatabase } from "@barber/database";
 import type { StaffPrincipal } from "@barber/auth";
 import { ConfirmAppointment, CancelAppointment, AppointmentOutcome, CorrectAppointmentOutcome } from "./appointment-form";
+import { RescheduleForm } from "@barber/ui";
+import { rescheduleAppointment } from "./appointment-actions";
 import { calendarDates, currencyPrecision, formatMoneyMinor, messages, shiftCalendarDate, shopCalendarDate, type Locale } from "@barber/shared";
 
 import { filterAppointments, calendarFilterLink } from "./calendar-filter";
@@ -33,7 +35,7 @@ export async function AppointmentPanel({ principal, shopId, shopName, timeZone, 
         </a></li>)}</ul> : <p className="field-note">{t.bookingDayEmpty}</p>}
       </section>;
     })}</div></> : appointments.length ? <ul className="managed-services">{appointments.map(appointment => <li key={appointment.id}>
-      <div className="panel-heading"><h4>{appointment.client?.name ?? appointment.guestName ?? t.bookingGuest} · {appointment.barber.displayName}</h4><span className="neutral-badge">{t[statusKey[appointment.status]]}</span></div>
+      <div className="panel-heading"><h4>{appointment.client?.name ?? appointment.guestName ?? t.bookingGuest} · {appointment.barber.displayName}</h4><span className="neutral-badge">{t[statusKey[appointment.status]]}{appointment.walkIn && <> · {t.walkInBadge}</>}</span></div>
       <p><bdi>{format(appointment.startsAt)} – {format(appointment.serviceEndsAt)}</bdi></p>
       {(appointment.client?.phone || appointment.guestPhone) && <p><a href={`tel:${appointment.client?.phone ?? appointment.guestPhone}`}><bdi>{appointment.client?.phone ?? appointment.guestPhone}</bdi></a></p>}
       {appointment.services.length ? <p>{appointment.services.map(service => service.name).join(" · ")} · <bdi>{new Intl.NumberFormat(locale, { style: "currency", currency: appointment.services[0]!.currency }).format(appointment.services.reduce((sum, service) => sum + service.priceMinor, 0) / 10 ** currencyPrecision(appointment.services[0]!.currency))}</bdi></p> : <p>{t.bookingHistoryMissing}</p>}
@@ -43,6 +45,7 @@ export async function AppointmentPanel({ principal, shopId, shopName, timeZone, 
       <AppointmentMessage locale={locale} phone={appointment.client?.phone ?? appointment.guestPhone} appointment={{ shopName, clientName: appointment.client?.name ?? appointment.guestName ?? t.bookingGuest, barberName: appointment.barber.displayName, startsAt: appointment.startsAt, timeZone, status: appointment.status, services: appointment.services }} />
       {ownerControls && (appointment.status === "COMPLETED" || appointment.status === "NO_SHOW") && <CorrectAppointmentOutcome key={`correction-${appointment.status}`} shopId={shopId} appointmentId={appointment.id} status={appointment.status} />}
       {appointment.status === "PENDING" && <ConfirmAppointment shopId={shopId} appointmentId={appointment.id} />}
+      {(appointment.status === "PENDING" || appointment.status === "CONFIRMED") && appointment.startsAt.getTime() > result.observedAt && <RescheduleForm key={`reschedule-${appointment.startsAt.toISOString()}`} action={rescheduleAppointment} fields={{ shopId, appointmentId: appointment.id }} expectedStartsAt={appointment.startsAt.toISOString()} defaultDate={shopCalendarDate(appointment.startsAt, timeZone)} timeZone={timeZone} canOverride={ownerControls} />}
       {(appointment.status === "PENDING" || appointment.status === "CONFIRMED") && <CancelAppointment canOverride={ownerControls} key={appointment.status} shopId={shopId} appointmentId={appointment.id} status={appointment.status} />}
       {(appointment.status === "PENDING" || appointment.status === "CONFIRMED") && <AppointmentOutcome key={`outcome-${appointment.status}`} shopId={shopId} appointmentId={appointment.id} status={appointment.status} />}
     </li>)}</ul> : <p>{t.bookingDayEmpty}</p>}

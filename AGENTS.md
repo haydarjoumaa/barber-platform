@@ -14,7 +14,8 @@ Build a multi-tenant barbershop booking SaaS. This document is the agreed produc
 ## Core tenancy and registration
 - One platform serves many independent barbershops. Do not create separate deployments/databases per shop.
 - Each barbershop has a unique, editable URL slug (suggested from name, validated for uniqueness and reserved paths).
-- Owner self-registers, account activates immediately, guided setup wizard; shop booking page only publishes after mandatory profile fields are complete.
+- Only the platform administrator creates shops and their owner accounts (user decision, November 10). Public owner self-registration is disabled. Owners complete setup; the shop booking page only publishes after mandatory profile fields are complete.
+- Local platform administrator login: `http://localhost:3001/login`; staff login: `http://localhost:3001/{shopSlug}/login`; client booking: `http://localhost:3002/{shopSlug}`. Staff sign-in is scoped to the selected shop.
 - Owner can edit shop name, logo, colors, photos, description, contact info, social links, services, prices, hours and configurable page sections/templates.
 - No public shop directory/search or cross-shop discovery in MVP. Clients arrive using a particular shop's link.
 - Clients are shop-specific: one client account per shop, and the same phone may register at different shops but not twice in one shop. Do not create cross-shop client access by default.

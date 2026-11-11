@@ -26,6 +26,10 @@ export async function saveTeam(_state: TeamState, form: FormData): Promise<TeamS
       if (!uuid.test(id)) return { error: "teamFailed" };
       if (operation === "revoke") await team.revoke(principal, shopId, id);
       else if (operation === "permissions") await team.permissions(principal, shopId, id, permissions);
+      else if (operation === "disable-access" || operation === "restore-access") {
+        if (scheduleField(form, "confirm") !== "on") return { error: "teamFailed" };
+        await team.access(principal, shopId, id, operation === "disable-access");
+      }
       else return { error: "teamFailed" };
     }
     revalidatePath("/workspace", "layout");

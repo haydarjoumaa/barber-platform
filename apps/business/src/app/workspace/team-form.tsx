@@ -30,3 +30,19 @@ export function RevokeInvite({ shopId, id }: { shopId: string; id: string }) {
   const [state, action, pending] = useActionState(saveTeam, {});
   return <form action={action}><input type="hidden" name="shopId" value={shopId} /><input type="hidden" name="operation" value="revoke" /><input type="hidden" name="id" value={id} /><button className="secondary-button" disabled={pending}>{t("teamRevoke")}</button>{state.error && <p role="alert">{t(state.error)}</p>}</form>;
 }
+
+export function StaffAccessForm({ shopId, id, disabled }: { shopId: string; id: string; disabled: boolean }) {
+  const { t } = useLocale();
+  const [state, action, pending] = useActionState(saveTeam, {});
+  return <form action={action} className="account-form">
+    <input type="hidden" name="shopId" value={shopId} /><input type="hidden" name="id" value={id} />
+    <input type="hidden" name="operation" value={disabled ? "restore-access" : "disable-access"} />
+    <fieldset disabled={pending}>
+      <legend>{t(disabled ? "teamAccessDisabled" : "teamAccessActive")}</legend>
+      <p>{t(disabled ? "teamRestoreNote" : "teamDisableNote")}</p>
+      <label><input type="checkbox" name="confirm" required />{t("teamAccessConfirm")}</label>
+      <button className="secondary-button">{t(pending ? "authWorking" : disabled ? "teamRestoreAccess" : "teamDisableAccess")}</button>
+    </fieldset>
+    {state.error && <p role="alert">{t(state.error)}</p>}
+  </form>;
+}

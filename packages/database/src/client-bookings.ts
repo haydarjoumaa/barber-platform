@@ -3,8 +3,17 @@ import { clientIdentity, throttleClient, withPublishedShop } from "./client-acce
 import { searchBookingAvailability } from "./booking-availability";
 import { writeBooking } from "./booking-write";
 import { CancellationDeadlineError, SlotUnavailableError } from "./bookings";
+import { moveAppointment, rescheduleStarts, reschedulingDeadlinePassed, reschedulingPolicy, ReschedulingDeadlineError } from "./booking-reschedule";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** The signed-in client's own upcoming pending/confirmed appointment; guests cannot reschedule online. */
+async function ownAppointment(tx: Prisma.TransactionClient, shopId: string, token: string | undefined, appointmentId: string) {
+  const client = await clientIdentity(tx, shopId, token);
+  if (!client || !uuid.test(appointmentId)) throw new Error("Sign in required");
+  const appointment = await tx.appointment.findFirst({ where: { id: appointmentId, barbershopId: shopId, clientId: client.id, status: { in: ["PENDING", "CONFIRMED"] }, startsAt: { gt: new Date() } } });
+  if (!appointment) throw new Error("Appointment changed");
+  return appointment;
+}
 export interface ClientSlotInput { date: string; serviceIds: string[]; barberId?: string; }
 function selection(input: ClientSlotInput) {
   if (typeof input.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(input.date) ||
@@ -16,7 +25,7 @@ export function createClientBookings(db: PrismaClient) {
     storefront(slug: string) {
       return withPublishedShop(db, slug, async (tx, shop) => {
         const services = await tx.service.findMany({ where: { barbershopId: shop.id, archivedAt: null }, orderBy: { name: "asc" }, select: { id: true, name: true, priceMinor: true, durationMinutes: true, currency: true } });
-        const barbers = await tx.barber.findMany({ where: { barbershopId: shop.id }, orderBy: { displayName: "asc" }, select: { id: true, displayName: true } });
+        const barbers = await tx.barber.findMany({ where: { barbershopId: shop.id, membership: { accessDisabledAt: null } }, orderBy: { displayName: "asc" }, select: { id: true, displayName: true } });
         return { shop: { id: shop.id, slug: shop.slug, name: shop.name, currency: shop.currency, timeZone: shop.time_zone }, services, barbers };
       });
     },
@@ -69,6 +78,36 @@ export function createClientBookings(db: PrismaClient) {
           select: { id: true, startsAt: true, status: true, barber: { select: { displayName: true } }, services: { orderBy: { position: "asc" }, select: { name: true, priceMinor: true, currency: true } }, payments: { where: { voidedAt: null }, select: { id: true } } } });
         return { client, appointments, timeZone: shop.time_zone, total, page, pages };
       });
+    },
+    rescheduleOptions(slug: string, token: string | undefined, appointmentId: string, date: string) {
+      return withPublishedShop(db, slug, async (tx, shop) => {
+        const appointment = await ownAppointment(tx, shop.id, token, appointmentId);
+        const policy = await reschedulingPolicy(tx, shop.id);
+        const now = new Date();
+        if (reschedulingDeadlinePassed(appointment, policy, now)) throw new ReschedulingDeadlineError();
+        return { date, timeZone: shop.time_zone, starts: await rescheduleStarts(tx, shop.id, shop.time_zone, appointment, policy, date, now) };
+      });
+    },
+    async reschedule(slug: string, token: string | undefined, appointmentId: string, input: { expectedStartsAt: string; date: string; startsAt: number }) {
+      try {
+        return await withPublishedShop(db, slug, async (tx, shop) => {
+          const appointment = await ownAppointment(tx, shop.id, token, appointmentId);
+          if (appointment.startsAt.toISOString() !== input.expectedStartsAt) throw new Error("Appointment changed");
+          const policy = await reschedulingPolicy(tx, shop.id);
+          const now = new Date();
+          if (reschedulingDeadlinePassed(appointment, policy, now)) throw new ReschedulingDeadlineError();
+          // Manual-approval shops review client-chosen times again.
+          const status = policy.approvalMode === "MANUAL" ? "PENDING" : appointment.status as "PENDING" | "CONFIRMED";
+          const moved = await moveAppointment(tx, shop.id, shop.time_zone, appointment, policy, { date: input.date, startsAt: input.startsAt, status }, now, { clientId: appointment.clientId });
+          if (!moved) throw new SlotUnavailableError();
+          await tx.clientEvent.create({ data: { barbershopId: shop.id, clientId: appointment.clientId, event: "booking.rescheduled", details: { appointmentId, ...moved } } });
+          return moved;
+        });
+      } catch (error) {
+        const meta = error && typeof error === "object" && "meta" in error ? error.meta as { driverAdapterError?: { cause?: { originalCode?: string } } } : undefined;
+        if (meta?.driverAdapterError?.cause?.originalCode === "23P01") throw new SlotUnavailableError();
+        throw error;
+      }
     },
     cancel(slug: string, token: string | undefined, appointmentId: string, expectedStartsAt: string) {
       return withPublishedShop(db, slug, async (tx, shop) => {

@@ -5,6 +5,8 @@ vi.mock("@barber/database", () => ({ createClientProfiles: () => ({ get: mocks.g
 vi.mock("next/navigation", () => ({ redirect: (path: string) => { throw new Error(`redirect:${path}`); }, notFound: () => { throw new Error("not-found"); } }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => ({ value: "en" }) }) }));
 vi.mock("@barber/ui", () => ({ LanguageSwitcher: () => null }));
+vi.mock("../media-panel", () => ({ OwnerMediaPanel: () => null }));
+vi.mock("../client-reset-form", () => ({ ClientResetForm: () => null }));
 import Page from "./[clientId]/page";
 import { renderToStaticMarkup } from "react-dom/server";
 

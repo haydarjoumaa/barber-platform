@@ -2,11 +2,11 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { createClientBookings, createMediaRepository, getDatabase } from "@barber/database";
-import { formatMoneyMinor, LOCALE_COOKIE, messages, resolveLocale } from "@barber/shared";
-import { MediaManager } from "@barber/ui";
+import { formatMoneyMinor, LOCALE_COOKIE, messages, resolveLocale, shopCalendarDate } from "@barber/shared";
+import { MediaManager, RescheduleForm } from "@barber/ui";
 import { saveClientMedia } from "../../media-actions";
 import { clientShop, clientToken } from "../../client-server";
-import { clientSignOut } from "../../client-actions";
+import { clientReschedule, clientSignOut } from "../../client-actions";
 import { ClientAccountForm, ClientCancelForm } from "../../client-account-form";
 
 const statusKey = { PENDING: "bookingStatusPending", CONFIRMED: "bookingStatusConfirmed", CANCELLED: "bookingStatusCancelled", COMPLETED: "bookingStatusCompleted", NO_SHOW: "bookingStatusNoShow" } as const;
@@ -30,6 +30,7 @@ export default async function AccountPage({ params, searchParams }: { params: Pr
       const currency = appointment.services[0]?.currency;
       return <li key={appointment.id}><h3>{appointment.barber.displayName}</h3><p><bdi>{format(appointment.startsAt)} · {profile.timeZone}</bdi></p><p>{t[statusKey[appointment.status]]} · {appointment.payments.length ? t.paymentPaid : t.paymentUnpaid}</p>
         {currency ? <p>{appointment.services.map(service => service.name).join(" · ")} · <bdi>{formatMoneyMinor(appointment.services.reduce((sum, service) => sum + BigInt(service.priceMinor), 0n), currency, locale)}</bdi></p> : <p>{t.bookingHistoryMissing}</p>}
+        {view === "upcoming" && (appointment.status === "PENDING" || appointment.status === "CONFIRMED") && <RescheduleForm key={`reschedule-${appointment.startsAt.toISOString()}`} action={clientReschedule.bind(null, shopSlug)} fields={{ appointmentId: appointment.id }} expectedStartsAt={appointment.startsAt.toISOString()} defaultDate={shopCalendarDate(appointment.startsAt, profile.timeZone)} timeZone={profile.timeZone} />}
         {(appointment.status === "PENDING" || appointment.status === "CONFIRMED") && <ClientCancelForm slug={shopSlug} appointmentId={appointment.id} startsAt={appointment.startsAt.toISOString()} />}
       </li>;
     })}</ul> : <p>{t.clientHistoryEmpty}</p>}

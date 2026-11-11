@@ -7,7 +7,7 @@ export function createStaffTeam(db: PrismaClient) {
   return {
     list(principal: StaffPrincipal | null, shopId: string) {
       return withShopOwner(db, principal, shopId, async tx => ({
-        members: await tx.shopMembership.findMany({ where: { barbershopId: shopId }, orderBy: { id: "asc" }, select: { id: true, role: true, manageAppointments: true, manageSchedules: true, user: { select: { email: true } } } }),
+        members: await tx.shopMembership.findMany({ where: { barbershopId: shopId }, orderBy: { id: "asc" }, select: { id: true, role: true, accessDisabledAt: true, manageAppointments: true, manageSchedules: true, user: { select: { email: true } } } }),
         invites: await tx.staffInvite.findMany({ where: { barbershopId: shopId, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } }, orderBy: { expiresAt: "asc" }, select: { id: true, email: true, role: true, expiresAt: true } }),
       }));
     },
@@ -33,9 +33,22 @@ export function createStaffTeam(db: PrismaClient) {
     permissions(principal: StaffPrincipal | null, shopId: string, memberId: string, input: { manageAppointments: boolean; manageSchedules: boolean }) {
       return withShopOwner(db, principal, shopId, async (tx, _shop, actorUserId) => {
         if (typeof input.manageAppointments !== "boolean" || typeof input.manageSchedules !== "boolean") throw new Error("Invalid permissions");
-        const changed = await tx.shopMembership.updateMany({ where: { id: memberId, barbershopId: shopId, role: { in: ["BARBER", "RECEPTIONIST"] } }, data: input });
+        const changed = await tx.shopMembership.updateMany({ where: { id: memberId, barbershopId: shopId, accessDisabledAt: null, role: { in: ["BARBER", "RECEPTIONIST"] } }, data: input });
         if (changed.count !== 1) throw new Error("Member unavailable");
         await tx.auditEvent.create({ data: { barbershopId: shopId, actorUserId, event: "team.permissions_updated", details: { memberId, ...input } } });
+      });
+    },
+    access(principal: StaffPrincipal | null, shopId: string, memberId: string, disabled: boolean) {
+      return withShopOwner(db, principal, shopId, async (tx, _shop, actorUserId) => {
+        if (typeof disabled !== "boolean") throw new Error("Invalid access change");
+        // The shop lock serializes this with permission changes and staff operations.
+        // Keep identity, barber relations and history; revoke only this shop's access.
+        const changed = await tx.shopMembership.updateMany({
+          where: { id: memberId, barbershopId: shopId, role: { in: ["BARBER", "RECEPTIONIST"] }, accessDisabledAt: disabled ? null : { not: null } },
+          data: { accessDisabledAt: disabled ? new Date() : null, manageAppointments: false, manageSchedules: false },
+        });
+        if (changed.count !== 1) throw new Error("Member unavailable or access changed");
+        await tx.auditEvent.create({ data: { barbershopId: shopId, actorUserId, event: disabled ? "team.access_disabled" : "team.access_restored", details: { memberId } } });
       });
     },
   };

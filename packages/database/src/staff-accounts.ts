@@ -31,11 +31,11 @@ export function createStaffAccounts(database: PrismaClient, passwords: Passwords
     });
     if (!allowed) throw new AccountError("RATE_LIMITED");
   }
-  async function session(tx: Prisma.TransactionClient, userId: string, previousToken?: string) {
+  async function session(tx: Prisma.TransactionClient, userId: string, previousToken?: string, shopId: string | null = null) {
     if (previousToken && validToken(previousToken)) await tx.staffSession.deleteMany({ where: { tokenHash: digest(previousToken) } });
     const token = randomBytes(32).toString("hex");
     const expiresAt = new Date(Date.now() + STAFF_SESSION_SECONDS * 1000);
-    await tx.staffSession.create({ data: { tokenHash: digest(token), userId, expiresAt } });
+    await tx.staffSession.create({ data: { tokenHash: digest(token), userId, expiresAt, shopId } });
     return { token, expiresAt };
   }
   return {
@@ -65,10 +65,11 @@ export function createStaffAccounts(database: PrismaClient, passwords: Passwords
         const member = await tx.shopMembership.create({ data: { userId: user.id, barbershopId: shop.id, role: invite.role, manageAppointments: invite.manageAppointments, manageSchedules: invite.manageSchedules } });
         if (invite.role === "BARBER") await tx.barber.create({ data: { barbershopId: shop.id, membershipId: member.id, displayName: invite.displayName } });
         await tx.auditEvent.create({ data: { barbershopId: shop.id, actorUserId: user.id, event: "team.invite_accepted", details: { inviteId: invite.id, membershipId: member.id, role: invite.role } } });
-        return session(tx, user.id, previousToken);
+        return session(tx, user.id, previousToken, shop.id);
       });
     },
-    async register(input: OwnerRegistration, previousToken?: string) {
+    async provision(principal: StaffPrincipal | null, input: OwnerRegistration) {
+      if (!principal || !await database.platformAdmin.findUnique({ where: { userId: principal.userId } })) throw new Error("Forbidden");
       const email = emailAddress(input.email);
       await throttle("register", email ?? "invalid");
       if (!email || typeof input.password !== "string" || [...input.password].length < 12 || Buffer.byteLength(input.password, "utf8") > 1024 ||
@@ -77,19 +78,21 @@ export function createStaffAccounts(database: PrismaClient, passwords: Passwords
       const passwordHash = await passwords.hashPassword(input.password);
       try {
         return await database.$transaction(async tx => {
+          const [admin] = await tx.$queryRaw<{ user_id: string }[]>`SELECT user_id FROM platform_admins WHERE user_id = ${principal.userId}::uuid FOR SHARE`;
+          if (!admin) throw new Error("Forbidden");
           const user = await tx.user.create({ data: { email, passwordHash } });
           const shop = await tx.barbershop.create({ data: { name: input.shopName.trim(), slug: input.slug, currency: input.currency } });
           await tx.shopMembership.create({ data: { userId: user.id, barbershopId: shop.id, role: "OWNER" } });
-          await tx.auditEvent.create({ data: { barbershopId: shop.id, actorUserId: user.id, event: "owner.registered", details: {} } });
-          await tx.staffAuthEvent.create({ data: { userId: user.id, event: "registration.succeeded" } });
-          return session(tx, user.id, previousToken);
+          await tx.auditEvent.create({ data: { barbershopId: shop.id, actorUserId: principal.userId, event: "shop.provisioned", details: { ownerUserId: user.id } } });
+          await tx.platformAuditEvent.create({ data: { actorUserId: principal.userId, event: "platform.shop_created", details: { shopId: shop.id, ownerUserId: user.id } } });
+          return { shopId: shop.id, slug: shop.slug, ownerUserId: user.id };
         });
       } catch (error) {
         if (error && typeof error === "object" && "code" in error && error.code === "P2002") throw new AccountError("REGISTRATION_FAILED");
         throw error;
       }
     },
-    async login(emailInput: string, password: string, previousToken?: string) {
+    async login(emailInput: string, password: string, previousToken?: string, shopSlug?: string) {
       const email = emailAddress(emailInput);
       await throttle("login", email ?? "invalid");
       const user = email ? await database.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } } }) : null;
@@ -102,8 +105,17 @@ export function createStaffAccounts(database: PrismaClient, passwords: Passwords
         // Serialize against password changes; never issue a session from a stale hash.
         const [current] = await tx.$queryRaw<{ password_hash: string | null }[]>`SELECT password_hash FROM users WHERE id = ${user.id}::uuid FOR UPDATE`;
         if (current?.password_hash !== user.passwordHash) throw new AccountError("INVALID_CREDENTIALS");
+        let shopId: string | null = null;
+        if (shopSlug !== undefined) {
+          if (!isValidShopSlug(shopSlug)) throw new AccountError("INVALID_CREDENTIALS");
+          const membership = await tx.shopMembership.findFirst({ where: { userId: user.id, accessDisabledAt: null, barbershop: { slug: shopSlug, deletedAt: null, suspendedAt: null } }, select: { barbershopId: true } });
+          if (!membership) throw new AccountError("INVALID_CREDENTIALS");
+          shopId = membership.barbershopId;
+        } else if (!await tx.platformAdmin.findUnique({ where: { userId: user.id } })) {
+          throw new AccountError("INVALID_CREDENTIALS");
+        }
         await tx.staffAuthEvent.create({ data: { userId: user.id, event: "login.succeeded" } });
-        return session(tx, user.id, previousToken);
+        return session(tx, user.id, previousToken, shopId);
       });
     },
     async authenticate(token: string | undefined): Promise<StaffPrincipal | null> {
@@ -112,8 +124,10 @@ export function createStaffAccounts(database: PrismaClient, passwords: Passwords
         const now = new Date();
         const active = await tx.staffSession.updateMany({ where: { tokenHash: digest(token), expiresAt: { gt: now }, lastSeenAt: { gt: new Date(now.getTime() - IDLE_MS) } }, data: { lastSeenAt: now } });
         if (!active.count) return null;
-        const stored = await tx.staffSession.findUniqueOrThrow({ where: { tokenHash: digest(token) }, select: { userId: true, user: { select: { memberships: { where: { barbershop: { deletedAt: null, suspendedAt: null } }, select: { barbershopId: true, role: true } } } } } });
-        return { userId: stored.userId, memberships: stored.user.memberships };
+        const stored = await tx.staffSession.findUniqueOrThrow({ where: { tokenHash: digest(token) }, select: { userId: true, shopId: true, user: { select: { platformAdmin: { select: { userId: true } }, memberships: { where: { accessDisabledAt: null, barbershop: { deletedAt: null, suspendedAt: null } }, select: { barbershopId: true, role: true } } } } } });
+        if (stored.shopId === null) return stored.user.platformAdmin ? { userId: stored.userId, memberships: [] } : null;
+        const memberships = stored.user.memberships.filter(member => member.barbershopId === stored.shopId);
+        return memberships.length ? { userId: stored.userId, memberships } : null;
       });
     },
     async logout(token: string | undefined) {

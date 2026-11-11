@@ -1,3 +1,5 @@
+> November 10 local routing decision: port 3001 `/login` is platform-administrator-only; `/{shopSlug}/login` signs staff into a session scoped to that shop. The authenticated workspace still uses `/workspace`. Port 3002 `/{shopSlug}` serves that shop's customers. Only the platform administrator creates shops. Any earlier self-registration assumptions below are superseded. Single-domain deployment remains deferred.
+
 # Proposed public routing
 
 Status: proposal only. This increment runs independent apps at localhost:3001 and localhost:3002. Tenant storefront and account routes are now implemented in the Client App, behind publication/activation checks. Public business/admin gateway prefixes are not wired yet.

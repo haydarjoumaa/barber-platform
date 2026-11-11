@@ -2,8 +2,8 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { CancellationDeadlineError, createClientBookings, getDatabase, SlotUnavailableError } from "@barber/database";
-import type { MessageKey } from "@barber/shared";
+import { CancellationDeadlineError, createClientBookings, getDatabase, ReschedulingDeadlineError, SlotUnavailableError } from "@barber/database";
+import type { MessageKey, RescheduleState } from "@barber/shared";
 import { clientAccounts, clientCookieName, clientShop, clientToken, requireClientOrigin, setClientCookie } from "./client-server";
 
 export interface ClientActionState { error?: MessageKey; success?: boolean; }
@@ -83,4 +83,18 @@ export async function clientCancel(slug: string, _state: ClientActionState, form
     revalidatePath(`/${slug}/account`);
     return { success: true };
   } catch (error) { return { error: error instanceof CancellationDeadlineError ? "clientCancelDeadline" : "bookingCancelFailed" }; }
+}
+export async function clientReschedule(slug: string, state: RescheduleState, form: FormData): Promise<RescheduleState> {
+  try {
+    const { token } = await context(slug);
+    const appointmentId = field(form, "appointmentId"), date = field(form, "date");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ...state, error: "bookingRescheduleFailed" };
+    const bookings = createClientBookings(getDatabase());
+    if (field(form, "operation") === "search") return { date, starts: (await bookings.rescheduleOptions(slug, token, appointmentId, date)).starts };
+    const moved = await bookings.reschedule(slug, token, appointmentId, { expectedStartsAt: field(form, "expectedStartsAt"), date, startsAt: Number(field(form, "startsAt")) });
+    revalidatePath(`/${slug}/account`);
+    return { success: true, startsAt: moved.after.startsAt };
+  } catch (error) {
+    return { ...state, error: error instanceof ReschedulingDeadlineError ? "clientRescheduleDeadline" : error instanceof SlotUnavailableError ? "bookingSlotTaken" : "bookingRescheduleFailed" };
+  }
 }

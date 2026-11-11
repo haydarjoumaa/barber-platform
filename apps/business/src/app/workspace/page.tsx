@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { getDatabase, createStaffTeam, createServiceCatalog, createBookingAvailability, createOwnerBookings } from "@barber/database";
+import { getDatabase, createStaffTeam, createServiceCatalog, createBookingAvailability, createOwnerBookings, createShopPublication } from "@barber/database";
 import { LOCALE_COOKIE, messages, resolveLocale, currencyPrecision } from "@barber/shared";
 import { Icon, LanguageSwitcher } from "@barber/ui";
 import { accounts, staffToken } from "../account-server";
@@ -10,10 +10,12 @@ import { BarberProfileForm, BarberServiceForm } from "./barber-form";
 import { SchedulePanel, ClosurePanel } from "./schedule-panel";
 import { PolicyForm, AvailabilityForm, RegisterClientForm } from "./booking-form";
 import { StaffWorkspace } from "./staff-workspace";
-import { StaffInviteForm, StaffPermissionsForm, RevokeInvite } from "./team-form";
+import { StaffInviteForm, StaffPermissionsForm, StaffAccessForm, RevokeInvite } from "./team-form";
 import { OwnerMediaPanel } from "./media-panel";
 import { ShopDetailsForm } from "./shop-details-form";
 import { ShopProfileForm } from "./shop-profile-form";
+import { PublicationPanel } from "./publication-panel";
+import { WalkInSection } from "./walk-in-section";
 import { ClientDirectory } from "./client-directory";
 import { AppointmentPanel } from "./appointment-panel";
 import { signOut } from "../account-actions";
@@ -26,12 +28,13 @@ export default async function WorkspacePage({ searchParams }: { searchParams: Pr
   if (!principal) redirect("/login");
   const platformAdmin = await getDatabase().platformAdmin.findUnique({ where: { userId: principal.userId }, select: { userId: true } });
   const shops = await getDatabase().barbershop.findMany({ where: { id: { in: principal.memberships.filter(m => m.role === "OWNER").map(m => m.barbershopId) }, deletedAt: null, suspendedAt: null }, select: { id: true, name: true, slug: true, timeZone: true, phone: true, address: true, description: true, brandColor: true, updatedAt: true }, orderBy: { name: "asc" } });
-  return <div className="account-shell workspace-live"><header className="client-header"><Link className="brand" href="/"><span className="brand-mark"><Icon name="services" /></span>{t.brand}</Link><div className="account-header-actions"><LanguageSwitcher />{platformAdmin && <Link href="/admin">{t.adminTitle}</Link>}<form action={signOut}><button className="secondary-button">{t.authSignOut}</button></form></div></header><main><div className="page-heading"><div><p className="eyebrow">{t.business}</p><h1>{t.authWorkspaceTitle}</h1><p>{t.authWorkspaceNote}</p></div></div>{shops.length === 0 && principal.memberships.length === 0 && <section className="empty-panel"><Icon name="shield" /><h2>{t.authNoShops}</h2></section>}{await Promise.all(shops.map(async shop => {
+  return <div className="account-shell workspace-live"><header className="client-header"><Link className="brand" href="/workspace"><span className="brand-mark"><Icon name="services" /></span>{t.brand}</Link><div className="account-header-actions"><LanguageSwitcher />{platformAdmin && <Link href="/admin">{t.adminTitle}</Link>}<form action={signOut}><button className="secondary-button">{t.authSignOut}</button></form></div></header><main><div className="page-heading"><div><p className="eyebrow">{t.business}</p><h1>{t.authWorkspaceTitle}</h1><p>{t.authWorkspaceNote}</p></div></div>{shops.length === 0 && principal.memberships.length === 0 && <section className="empty-panel"><Icon name="shield" /><h2>{t.authNoShops}</h2></section>}{await Promise.all(shops.map(async shop => {
     const team = await createStaffTeam(getDatabase()).list(principal, shop.id);
     const catalog = await createServiceCatalog(getDatabase()).list(principal, shop.id);
     const clients = await createOwnerBookings(getDatabase()).clients(principal, shop.id);
     const policy = await createBookingAvailability(getDatabase()).policy(principal, shop.id);
-    return <section className="setup-panel live-shop" key={shop.id}><div className="panel-heading"><h2>{shop.name}</h2><span className="neutral-badge">{t.notPublished}</span></div><p className="panel-description">{t.authReservedSlug}: <bdi>/{shop.slug}</bdi> · {t.authCurrency}: <bdi>{catalog.currency}</bdi></p><div className="preview-notice"><p>{t.authOnboardingPending}</p></div><ShopProfileForm shop={shop} /><ShopDetailsForm shop={{ ...shop, updatedAt: shop.updatedAt.toISOString() }} /><OwnerMediaPanel principal={principal} shopId={shop.id} locale={locale} timeZone={shop.timeZone} /><p><Link className="secondary-button" href={`/workspace/reports?shopId=${shop.id}`}>{t.paymentReports}</Link></p><h3>{t.services}</h3>{catalog.currency ? <>
+    const publication = await createShopPublication(getDatabase()).status(principal, shop.id);
+    return <section className="setup-panel live-shop" key={shop.id}><div className="panel-heading"><h2>{shop.name}</h2><span className="neutral-badge">{publication.publishedAt ? t.adminPublished : t.notPublished}</span></div><p className="panel-description">{t.authReservedSlug}: <bdi>/{shop.slug}</bdi> · {t.authCurrency}: <bdi>{catalog.currency}</bdi></p><PublicationPanel shopId={shop.id} slug={shop.slug} publishedAt={publication.publishedAt?.toISOString() ?? null} gaps={publication.gaps} clientOrigin={process.env.CLIENT_ORIGIN?.replace(/\/$/, "") || null} /><ShopProfileForm shop={shop} /><ShopDetailsForm shop={{ ...shop, updatedAt: shop.updatedAt.toISOString() }} /><OwnerMediaPanel principal={principal} shopId={shop.id} locale={locale} timeZone={shop.timeZone} /><p><Link className="secondary-button" href={`/workspace/reports?shopId=${shop.id}`}>{t.paymentReports}</Link></p><h3>{t.services}</h3>{catalog.currency ? <>
       {catalog.services.length ? <ul className="managed-services">{catalog.services.map(service => <li key={service.id}>
         <div className="panel-heading"><h4>{service.name}</h4><span><bdi>{new Intl.NumberFormat(locale, { style: "currency", currency: catalog.currency! }).format(service.priceMinor / 10 ** currencyPrecision(catalog.currency!))}</bdi> · {service.durationMinutes} {t.authMinutes}</span></div>
         <details><summary>{t.serviceEdit}</summary><ServiceForm shopId={shop.id} currency={catalog.currency!} service={service} /></details>
@@ -41,7 +44,7 @@ export default async function WorkspacePage({ searchParams }: { searchParams: Pr
     </> : <CurrencyForm shopId={shop.id} currencies={Intl.supportedValuesOf("currency")} />}
       <section className="team-management"><h3>{t.team}</h3>
         <StaffInviteForm shopId={shop.id} />
-        <ul className="managed-services">{team.members.filter(member => member.role !== "OWNER").map(member => <li key={member.id}><h4>{member.user.email} · {t[member.role === "BARBER" ? "bookingBarber" : "teamReceptionist"]}</h4><StaffPermissionsForm key={`${member.id}-${member.manageAppointments}-${member.manageSchedules}`} shopId={shop.id} member={member} /></li>)}</ul>
+        <ul className="managed-services">{team.members.filter(member => member.role !== "OWNER").map(member => <li key={member.id}><h4>{member.user.email} · {t[member.role === "BARBER" ? "bookingBarber" : "teamReceptionist"]}</h4>{!member.accessDisabledAt && <StaffPermissionsForm key={`${member.id}-${member.manageAppointments}-${member.manageSchedules}`} shopId={shop.id} member={member} />}<StaffAccessForm key={`${member.id}-${Boolean(member.accessDisabledAt)}`} shopId={shop.id} id={member.id} disabled={Boolean(member.accessDisabledAt)} /></li>)}</ul>
         {team.invites.length > 0 && <><h4>{t.teamPendingInvites}</h4><ul className="managed-services">{team.invites.map(invite => <li key={invite.id}><p>{invite.email} · <bdi>{invite.expiresAt.toISOString()}</bdi></p><RevokeInvite shopId={shop.id} id={invite.id} /></li>)}</ul></>}
 <p className="panel-description">{t.barberProfileNote}</p>
         {catalog.availableMembers.length ? <BarberProfileForm shopId={shop.id} members={catalog.availableMembers} /> : <p className="field-note">{t.barberNoMembers}</p>}
@@ -59,6 +62,7 @@ export default async function WorkspacePage({ searchParams }: { searchParams: Pr
       </section>
       <ClosurePanel principal={principal} shopId={shop.id} locale={locale} />
       <section className="team-management"><RegisterClientForm shopId={shop.id} /><PolicyForm shopId={shop.id} policy={policy} />{policy ? <AvailabilityForm key={JSON.stringify(policy)} shopId={shop.id} services={catalog.services} barbers={catalog.barbers} clients={clients} /> : <p>{t.bookingPolicyRequired}</p>}</section>
+      {policy && <WalkInSection principal={principal} shopId={shop.id} clients={clients} isOwner locale={locale} />}
       <ClientDirectory shopId={shop.id} clients={clients} />
       <AppointmentPanel principal={principal} shopId={shop.id} shopName={shop.name} timeZone={shop.timeZone} locale={locale} {...(typeof search === "string" ? { search: search.slice(0, 100) } : {})} {...(typeof status === "string" ? { status } : {})} {...(date ? { date } : {})} {...(view ? { view } : {})} />
     </section>;
